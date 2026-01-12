@@ -47,6 +47,14 @@ export interface WishlistItem {
   store_location?: string;
 }
 
+export interface ScannedItem {
+  id: string;
+  code: string;
+  format: string;
+  created_at: string;
+  store_location?: string;
+}
+
 export interface Translation {
   dashboard: string;
   inventory: string;
