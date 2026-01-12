@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Html5QrcodeScanner, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Camera, Copy, Trash2, StopCircle, PlayCircle, ScanLine } from 'lucide-react';
+import { Copy, Trash2, StopCircle, PlayCircle, ScanLine, AlertCircle } from 'lucide-react';
 import { Language, Translation } from '../types';
 
 interface ScannerProps {
@@ -17,21 +17,23 @@ interface ScannedItem {
 const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [permissionError, setPermissionError] = useState(false);
   const scannerRef = useRef<Html5QrcodeScanner | null>(null);
 
   useEffect(() => {
+    // Auto-start scanning when component mounts
+    startScanning();
+
     // Cleanup on unmount
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.clear().catch(err => console.error("Failed to clear scanner", err));
-      }
+      stopScanning();
     };
   }, []);
 
   const startScanning = () => {
-    if (isScanning) return;
+    if (isScanning || scannerRef.current) return;
 
-    // Use a timeout to ensure DOM is ready
+    // Use a small timeout to ensure DOM element exists
     setTimeout(() => {
         try {
             const scanner = new Html5QrcodeScanner(
@@ -40,6 +42,10 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
                     fps: 10, 
                     qrbox: { width: 250, height: 250 },
                     aspectRatio: 1.0,
+                    // Prefer back camera on mobile
+                    videoConstraints: {
+                        facingMode: "environment" 
+                    },
                     formatsToSupport: [
                         Html5QrcodeSupportedFormats.EAN_13,
                         Html5QrcodeSupportedFormats.EAN_8,
@@ -54,9 +60,10 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
             scanner.render(onScanSuccess, onScanFailure);
             scannerRef.current = scanner;
             setIsScanning(true);
+            setPermissionError(false);
         } catch (e) {
             console.error(e);
-            alert(t.cameraError);
+            setPermissionError(true);
         }
     }, 100);
   };
@@ -73,11 +80,9 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   };
 
   const onScanSuccess = (decodedText: string, decodedResult: any) => {
-    // Play a beep sound (simulated by logic or standard audio if available, skipping for now)
-    
     setScannedItems(prev => {
-        // Prevent duplicate consecutive scans (debounce)
-        if (prev.length > 0 && prev[0].code === decodedText && (Date.now() - new Date(prev[0].timestamp).getTime() < 2000)) {
+        // Prevent duplicate consecutive scans (debounce 2s)
+        if (prev.length > 0 && prev[0].code === decodedText && (Date.now() - new Date(prev[0].timestamp as any).getTime() < 2000)) {
             return prev;
         }
         
@@ -91,12 +96,11 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   };
 
   const onScanFailure = (error: any) => {
-    // console.warn(`Code scan error = ${error}`);
+     // Standard behavior is to ignore frames with no barcode
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    // Could add toast here
   };
 
   const clearList = () => {
@@ -105,7 +109,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+      <div className="bg-white p-4 lg:p-6 rounded-xl shadow-sm border border-slate-200">
         <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold text-slate-800 flex items-center space-x-2">
                 <ScanLine className="text-orange-500" />
@@ -114,17 +118,17 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
             {isScanning ? (
                 <button 
                     onClick={stopScanning}
-                    className="flex items-center space-x-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                    className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
                 >
-                    <StopCircle size={18} />
+                    <StopCircle size={16} />
                     <span>{t.stopScan}</span>
                 </button>
             ) : (
                 <button 
                     onClick={startScanning}
-                    className="flex items-center space-x-2 px-4 py-2 bg-lime-600 text-white rounded-lg hover:bg-lime-700 transition-colors"
+                    className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-lime-600 text-white rounded-lg hover:bg-lime-700 transition-colors"
                 >
-                    <PlayCircle size={18} />
+                    <PlayCircle size={16} />
                     <span>{t.startScan}</span>
                 </button>
             )}
@@ -132,11 +136,12 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
 
         {/* Camera Container */}
         <div className="relative bg-black rounded-lg overflow-hidden min-h-[300px] flex items-center justify-center">
-            {!isScanning && (
-                <div className="text-slate-500 flex flex-col items-center">
-                    <Camera size={48} className="mb-2 opacity-50" />
-                    <p>{t.startScan}</p>
-                </div>
+            {permissionError && (
+                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900 p-6 text-center z-10">
+                    <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
+                    <p className="mb-2">{t.cameraError}</p>
+                    <button onClick={startScanning} className="mt-4 px-4 py-2 bg-slate-700 rounded text-sm">Retry</button>
+                 </div>
             )}
             <div id="reader" className="w-full h-full"></div>
         </div>
@@ -145,31 +150,31 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
       {/* Results List */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-            <h3 className="font-bold text-slate-700">{t.scannedCodes} ({scannedItems.length})</h3>
+            <h3 className="font-bold text-slate-700 text-sm">{t.scannedCodes} ({scannedItems.length})</h3>
             {scannedItems.length > 0 && (
-                <button onClick={clearList} className="text-sm text-red-500 hover:text-red-700">
+                <button onClick={clearList} className="text-xs text-red-500 hover:text-red-700 font-medium uppercase">
                     {t.delete}
                 </button>
             )}
         </div>
-        <ul className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
+        <ul className="divide-y divide-slate-100 max-h-[300px] overflow-y-auto">
             {scannedItems.map((item, idx) => (
                 <li key={idx} className="p-4 flex justify-between items-center hover:bg-slate-50">
-                    <div>
-                        <p className="font-mono text-lg font-bold text-slate-800">{item.code}</p>
-                        <p className="text-xs text-slate-400">{item.format} • {item.timestamp}</p>
+                    <div className="overflow-hidden">
+                        <p className="font-mono text-lg font-bold text-slate-800 break-all">{item.code}</p>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-wider">{item.format} • {item.timestamp}</p>
                     </div>
                     <button 
                         onClick={() => copyToClipboard(item.code)}
-                        className="p-2 text-slate-400 hover:text-orange-500 transition-colors"
+                        className="p-3 bg-slate-100 rounded-full text-slate-400 hover:text-orange-500 hover:bg-orange-50 transition-colors ml-4"
                         title={t.copy}
                     >
-                        <Copy size={20} />
+                        <Copy size={18} />
                     </button>
                 </li>
             ))}
             {scannedItems.length === 0 && (
-                <li className="p-8 text-center text-slate-400">
+                <li className="p-8 text-center text-slate-400 text-sm">
                     {t.noData}
                 </li>
             )}

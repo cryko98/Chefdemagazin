@@ -107,13 +107,13 @@ const Orders: React.FC<OrdersProps> = ({ t, lang, suppliers, orders, setOrders }
 
   return (
     <div className="space-y-6">
-      {/* Supplier Tabs */}
-      <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide">
+      {/* Supplier Tabs - Horizontal Scroll */}
+      <div className="flex space-x-3 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0">
         {suppliers.map(s => (
             <button
                 key={s.id}
                 onClick={() => setActiveSupplierId(s.id)}
-                className={`whitespace-nowrap px-4 py-3 rounded-xl font-medium text-sm transition-all flex items-center space-x-2 ${
+                className={`whitespace-nowrap px-4 py-3 rounded-xl font-medium text-sm transition-all flex-shrink-0 flex items-center space-x-2 ${
                     activeSupplierId === s.id 
                     ? 'bg-orange-500 text-white shadow-md shadow-orange-200' 
                     : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
@@ -133,20 +133,24 @@ const Orders: React.FC<OrdersProps> = ({ t, lang, suppliers, orders, setOrders }
       {activeSupplierId && currentSupplier ? (
         <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
              {/* Header Info */}
-            <div className="bg-white p-6 rounded-t-xl border-b border-slate-100 flex flex-col md:flex-row md:justify-between md:items-center gap-4 border border-slate-200">
-                <div>
-                    <h2 className="text-xl font-bold text-slate-800">{currentSupplier.name}</h2>
-                    <div className="flex items-center space-x-4 mt-1 text-sm text-slate-500">
-                        <span>{t.orderDay}: <span className="font-medium text-slate-700">{currentSupplier.orderDay}</span></span>
-                        <span>{t.deliveryDay}: <span className="font-medium text-slate-700">{currentSupplier.deliveryDay}</span></span>
-                        <span className="bg-lime-100 text-lime-800 px-2 py-0.5 rounded text-xs">{currentSupplier.orderMethod}</span>
+            <div className="bg-white p-4 lg:p-6 rounded-t-xl border-b border-slate-100 flex flex-col gap-4 border border-slate-200">
+                <div className="flex justify-between items-start">
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-800">{currentSupplier.name}</h2>
+                        <div className="flex flex-wrap gap-2 mt-1 text-sm text-slate-500">
+                            <span className="whitespace-nowrap">{t.orderDay}: <span className="font-medium text-slate-700">{currentSupplier.orderDay}</span></span>
+                            <span className="hidden sm:inline text-slate-300">|</span>
+                            <span className="whitespace-nowrap">{t.deliveryDay}: <span className="font-medium text-slate-700">{currentSupplier.deliveryDay}</span></span>
+                        </div>
                     </div>
+                     <span className="bg-lime-100 text-lime-800 px-2 py-1 rounded text-xs font-bold">{currentSupplier.orderMethod}</span>
                 </div>
+                
                 {activeOrders.length > 0 && (
                     <button 
                         onClick={handleGenerateEmail}
                         disabled={generatingFor === currentSupplier.id}
-                        className="bg-lime-600 hover:bg-lime-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2 shadow-sm"
+                        className="w-full sm:w-auto bg-lime-600 hover:bg-lime-700 text-white px-4 py-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center space-x-2 shadow-sm"
                     >
                         <Mail size={18} />
                         <span>{generatingFor === currentSupplier.id ? t.loading : t.generateOrder}</span>
@@ -156,7 +160,7 @@ const Orders: React.FC<OrdersProps> = ({ t, lang, suppliers, orders, setOrders }
 
             {/* Quick Add To Current Supplier */}
             <div className="bg-slate-50 p-4 border-x border-slate-200 flex flex-col md:flex-row gap-3 items-end">
-                <div className="flex-[2] w-full">
+                <div className="w-full md:flex-[2]">
                     <label className="block text-xs font-semibold text-slate-500 mb-1">{t.addToOrder} ({currentSupplier.name})</label>
                     <input 
                         type="text" 
@@ -166,27 +170,29 @@ const Orders: React.FC<OrdersProps> = ({ t, lang, suppliers, orders, setOrders }
                         className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-orange-500 focus:border-orange-500"
                     />
                 </div>
-                <div className="flex-1 min-w-[100px]">
-                     <label className="block text-xs font-semibold text-slate-500 mb-1">{t.quantity}</label>
-                    <input 
-                        type="number" 
-                        min="1"
-                        value={newItemQty}
-                        onChange={(e) => setNewItemQty(parseInt(e.target.value) || 1)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-orange-500 focus:border-orange-500"
-                    />
-                </div>
-                <div className="flex-1 min-w-[100px]">
-                     <label className="block text-xs font-semibold text-slate-500 mb-1">{t.unit}</label>
-                    <select 
-                        value={newItemUnit}
-                        onChange={(e) => setNewItemUnit(e.target.value as Unit)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-orange-500 focus:border-orange-500 bg-white"
-                    >
-                        <option value="pcs">{t.units.pcs}</option>
-                        <option value="kg">{t.units.kg}</option>
-                        <option value="box">{t.units.box}</option>
-                    </select>
+                <div className="flex w-full md:w-auto gap-2">
+                    <div className="flex-1 md:w-24">
+                         <label className="block text-xs font-semibold text-slate-500 mb-1">{t.quantity}</label>
+                        <input 
+                            type="number" 
+                            min="1"
+                            value={newItemQty}
+                            onChange={(e) => setNewItemQty(parseInt(e.target.value) || 1)}
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-orange-500 focus:border-orange-500"
+                        />
+                    </div>
+                    <div className="flex-1 md:w-28">
+                         <label className="block text-xs font-semibold text-slate-500 mb-1">{t.unit}</label>
+                        <select 
+                            value={newItemUnit}
+                            onChange={(e) => setNewItemUnit(e.target.value as Unit)}
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-orange-500 focus:border-orange-500 bg-white"
+                        >
+                            <option value="pcs">{t.units.pcs}</option>
+                            <option value="kg">{t.units.kg}</option>
+                            <option value="box">{t.units.box}</option>
+                        </select>
+                    </div>
                 </div>
                 <button 
                     onClick={handleAddAdHoc}
@@ -209,15 +215,15 @@ const Orders: React.FC<OrdersProps> = ({ t, lang, suppliers, orders, setOrders }
                         {activeOrders.map(item => (
                             <li key={item.id} className="p-4 flex justify-between items-center hover:bg-slate-50 transition-colors group">
                                 <div className="flex items-center space-x-4">
-                                    <div className="bg-lime-100 text-lime-700 px-3 py-1 rounded-lg text-sm font-bold min-w-[4rem] text-center flex items-center justify-center space-x-1">
+                                    <div className="bg-lime-100 text-lime-700 px-3 py-1 rounded-lg text-sm font-bold min-w-[3.5rem] text-center flex flex-col sm:flex-row items-center justify-center sm:space-x-1 leading-tight">
                                         <span>{item.quantity}</span>
-                                        <span className="text-xs font-normal opacity-75">{t.units[item.unit]}</span>
+                                        <span className="text-[10px] sm:text-xs font-normal opacity-75">{t.units[item.unit]}</span>
                                     </div>
-                                    <span className={`text-base ${item.isAdHoc ? 'italic text-slate-600' : 'text-slate-900 font-medium'}`}>
+                                    <span className={`text-sm sm:text-base ${item.isAdHoc ? 'italic text-slate-600' : 'text-slate-900 font-medium'}`}>
                                         {item.name}
                                     </span>
                                 </div>
-                                <button onClick={() => removeOrder(item.id)} className="text-slate-300 hover:text-red-500 transition-colors">
+                                <button onClick={() => removeOrder(item.id)} className="text-slate-300 hover:text-red-500 transition-colors p-2">
                                     <Trash2 size={18} />
                                 </button>
                             </li>
@@ -234,49 +240,49 @@ const Orders: React.FC<OrdersProps> = ({ t, lang, suppliers, orders, setOrders }
 
        {/* Email Modal */}
        {emailDraft && activeDraftSupplier && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-in fade-in">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-in fade-in backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[90vh]">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+            <div className="p-4 border-b border-slate-100 flex justify-between items-center">
               <h3 className="text-lg font-bold text-slate-800 flex items-center space-x-2">
-                <Mail className="text-orange-500" />
+                <Mail className="text-orange-500" size={20} />
                 <span>{t.emailPreview}</span>
               </h3>
               <button 
                 onClick={() => setEmailDraft(null)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 p-2"
               >
                 {t.close}
               </button>
             </div>
             
-            <div className="p-6 flex-1 overflow-y-auto">
+            <div className="p-4 flex-1 overflow-y-auto">
                 <div className="space-y-4">
                   <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm text-slate-700 whitespace-pre-line font-mono border-l-4 border-l-orange-500">
                     {emailDraft}
                   </div>
-                  <div className="flex items-center space-x-2 text-sm text-lime-700 bg-lime-50 p-3 rounded-md border border-lime-200">
-                    <AlertCircle size={16} />
+                  <div className="flex items-center space-x-2 text-xs sm:text-sm text-lime-700 bg-lime-50 p-3 rounded-md border border-lime-200">
+                    <AlertCircle size={16} className="flex-shrink-0" />
                     <span>Gemini: Review draft before sending.</span>
                   </div>
                 </div>
             </div>
             
-            <div className="p-6 border-t border-slate-100 flex justify-between">
+            <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between gap-3">
                <button
                   onClick={() => clearOrdersForSupplier(activeDraftSupplier.id)}
-                  className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg text-sm font-medium"
+                  className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg text-sm font-medium border border-transparent hover:border-red-100 transition-colors"
                >
                    Clear List
                </button>
-               <div className="flex space-x-3">
+               <div className="flex gap-3">
                     <button 
                         onClick={() => setEmailDraft(null)}
-                        className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-50"
+                        className="flex-1 sm:flex-none px-4 py-2 border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-50"
                     >
                         {t.close}
                     </button>
                     <button 
-                        className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 flex items-center space-x-2"
+                        className="flex-1 sm:flex-none px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 flex items-center justify-center space-x-2 shadow-sm"
                         onClick={() => {
                             alert('Simulated sending email to ' + activeDraftSupplier.contact);
                             setEmailDraft(null);
