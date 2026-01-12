@@ -24,6 +24,8 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   // Ref to track component mount status to prevent race conditions
   const isMounted = useRef(true);
+  // Ref to track last scanned item for debouncing
+  const lastScanRef = useRef<{ code: string; time: number } | null>(null);
 
   useEffect(() => {
     isMounted.current = true;
@@ -130,12 +132,20 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   };
 
   const onScanSuccess = (decodedText: string, decodedResult: any) => {
+    const now = Date.now();
+    
+    // Check if same code was scanned recently (within 2.5 seconds)
+    // This prevents the "machine gun" effect where one barcode triggers multiple scans instantly
+    if (lastScanRef.current && 
+        lastScanRef.current.code === decodedText && 
+        now - lastScanRef.current.time < 2500) {
+        return;
+    }
+
+    // Update last scan ref
+    lastScanRef.current = { code: decodedText, time: now };
+
     setScannedItems(prev => {
-        // Prevent duplicate consecutive scans (debounce 2s)
-        if (prev.length > 0 && prev[0].code === decodedText && (Date.now() - new Date(prev[0].timestamp as any).getTime() < 2000)) {
-            return prev;
-        }
-        
         const newItem: ScannedItem = {
             code: decodedText,
             timestamp: new Date().toLocaleTimeString(),
@@ -157,6 +167,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
 
   const clearList = () => {
       setScannedItems([]);
+      lastScanRef.current = null;
   };
 
   return (
