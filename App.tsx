@@ -10,7 +10,7 @@ import Wishlist from './components/Wishlist';
 import Advisor from './components/Advisor';
 import Scanner from './components/Scanner';
 import Auth from './components/Auth';
-import { Language, Supplier, Product, OrderItem, WishlistItem } from './types';
+import { Language, Supplier, Product, OrderItem, WishlistItem, UserRole, StoreLocation } from './types';
 import { TRANSLATIONS } from './constants';
 
 type Tab = 'dashboard' | 'inventory' | 'suppliers' | 'orders' | 'wishlist' | 'advisor' | 'scanner';
@@ -20,6 +20,10 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [language, setLanguage] = useState<Language>('RO');
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+
+  // User Metadata
+  const [userRole, setUserRole] = useState<UserRole>('MANAGER');
+  const [userStore, setUserStore] = useState<StoreLocation>('Cherechiu');
 
   // State
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -31,16 +35,20 @@ const App: React.FC = () => {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) fetchData();
-      else setLoading(false);
+      if (session) {
+          initializeUser(session);
+      } else {
+          setLoading(false);
+      }
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) fetchData();
-      else {
+      if (session) {
+          initializeUser(session);
+      } else {
           setSuppliers([]);
           setProducts([]);
           setOrders([]);
@@ -52,14 +60,31 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchData = async () => {
+  const initializeUser = (session: any) => {
+      const metadata = session.user.user_metadata;
+      const role = metadata?.role || 'MANAGER';
+      const store = metadata?.store_location || 'Cherechiu';
+      
+      setUserRole(role);
+      setUserStore(store);
+
+      // If cashier, default to wishlist
+      if (role === 'CASHIER') {
+          setActiveTab('wishlist');
+      }
+
+      fetchData(store);
+  };
+
+  const fetchData = async (storeLocation: string) => {
     setLoading(true);
     try {
+        // Fetch data filtered by the specific store location
         const [supRes, prodRes, ordRes, wishRes] = await Promise.all([
-            supabase.from('suppliers').select('*'),
-            supabase.from('products').select('*'),
-            supabase.from('orders').select('*'),
-            supabase.from('wishlist').select('*')
+            supabase.from('suppliers').select('*').eq('store_location', storeLocation),
+            supabase.from('products').select('*').eq('store_location', storeLocation),
+            supabase.from('orders').select('*').eq('store_location', storeLocation),
+            supabase.from('wishlist').select('*').eq('store_location', storeLocation)
         ]);
 
         if (supRes.data) setSuppliers(supRes.data);
@@ -89,13 +114,18 @@ const App: React.FC = () => {
   }
 
   const renderContent = () => {
+      // Security check for rendering
+      if (userRole === 'CASHIER' && !['wishlist', 'scanner'].includes(activeTab)) {
+          return <Wishlist t={t} lang={language} wishlist={wishlist} setWishlist={setWishlist} storeLocation={userStore} />;
+      }
+
       switch(activeTab) {
           case 'dashboard': return <Dashboard t={t} lang={language} suppliers={suppliers} products={products} orders={orders} wishlist={wishlist} />;
           case 'scanner': return <Scanner t={t} lang={language} />;
-          case 'suppliers': return <Suppliers t={t} lang={language} suppliers={suppliers} setSuppliers={setSuppliers} />;
-          case 'inventory': return <Inventory t={t} lang={language} products={products} setProducts={setProducts} suppliers={suppliers} setOrders={setOrders} />;
-          case 'orders': return <Orders t={t} lang={language} suppliers={suppliers} orders={orders} setOrders={setOrders} />;
-          case 'wishlist': return <Wishlist t={t} lang={language} wishlist={wishlist} setWishlist={setWishlist} />;
+          case 'suppliers': return <Suppliers t={t} lang={language} suppliers={suppliers} setSuppliers={setSuppliers} storeLocation={userStore} />;
+          case 'inventory': return <Inventory t={t} lang={language} products={products} setProducts={setProducts} suppliers={suppliers} setOrders={setOrders} storeLocation={userStore} />;
+          case 'orders': return <Orders t={t} lang={language} suppliers={suppliers} orders={orders} setOrders={setOrders} storeLocation={userStore} />;
+          case 'wishlist': return <Wishlist t={t} lang={language} wishlist={wishlist} setWishlist={setWishlist} storeLocation={userStore} />;
           case 'advisor': return <Advisor t={t} lang={language} />;
           default: return <Dashboard t={t} lang={language} suppliers={suppliers} products={products} orders={orders} wishlist={wishlist} />;
       }
@@ -110,22 +140,35 @@ const App: React.FC = () => {
              <Store className="text-white w-8 h-8 mr-2" />
              <span className="font-bold text-xl tracking-tight text-white shadow-sm">LaDoiPasi</span>
           </div>
-          <span className="text-xs text-lime-100 font-medium tracking-wide">Sef de magazin</span>
+          <span className="text-xs text-lime-100 font-medium tracking-wide mt-1">
+              {userStore} • {userRole === 'MANAGER' ? t.roles.manager : t.roles.cashier}
+          </span>
         </div>
 
         <nav className="flex-1 py-6 px-4 space-y-2 overflow-y-auto">
-          <NavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={20} />} label={t.dashboard} />
-          <NavButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={20} />} label={t.scanner} />
-          <NavButton active={activeTab === 'suppliers'} onClick={() => setActiveTab('suppliers')} icon={<Truck size={20} />} label={t.suppliers} />
-          <NavButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon={<Package size={20} />} label={t.inventory} />
-          <NavButton active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} icon={<ShoppingCart size={20} />} label={t.orders} count={orders.length} />
+          {userRole === 'MANAGER' && (
+              <>
+                <NavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={20} />} label={t.dashboard} />
+                <NavButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={20} />} label={t.scanner} />
+                <NavButton active={activeTab === 'suppliers'} onClick={() => setActiveTab('suppliers')} icon={<Truck size={20} />} label={t.suppliers} />
+                <NavButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon={<Package size={20} />} label={t.inventory} />
+                <NavButton active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} icon={<ShoppingCart size={20} />} label={t.orders} count={orders.length} />
+              </>
+          )}
+          
           <NavButton active={activeTab === 'wishlist'} onClick={() => setActiveTab('wishlist')} icon={<Heart size={20} />} label={t.wishlist} count={wishlist.length} />
-          <NavButton active={activeTab === 'advisor'} onClick={() => setActiveTab('advisor')} icon={<MessageSquareText size={20} />} label={t.advisor} />
+          
+          {userRole === 'CASHIER' && (
+              <NavButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={20} />} label={t.scanner} />
+          )}
+
+          {userRole === 'MANAGER' && (
+            <NavButton active={activeTab === 'advisor'} onClick={() => setActiveTab('advisor')} icon={<MessageSquareText size={20} />} label={t.advisor} />
+          )}
         </nav>
 
         <div className="p-4 border-t border-lime-500 bg-lime-700/30">
           <div className="mb-4">
-            <p className="text-xs text-lime-100 uppercase font-semibold mb-2">{t.role}</p>
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 rounded-full bg-orange-500 border-2 border-white/30 flex items-center justify-center text-xs font-bold">
                  {session.user.email?.substring(0,2).toUpperCase()}
@@ -148,7 +191,7 @@ const App: React.FC = () => {
                <Store className="text-white w-6 h-6" />
                <div>
                    <span className="font-bold text-lg block leading-none">LaDoiPasi</span>
-                   <span className="text-[10px] text-lime-100 uppercase tracking-wider">Manager</span>
+                   <span className="text-[10px] text-lime-100 uppercase tracking-wider">{userStore}</span>
                </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -183,11 +226,24 @@ const App: React.FC = () => {
 
       {/* Mobile Bottom Navigation */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 flex justify-between px-2 py-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] safe-area-pb">
-          <MobileNavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={20} />} label={t.dashboard} />
-          <MobileNavButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={20} />} label={t.scanner} />
-          <MobileNavButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon={<Package size={20} />} label={t.inventory} />
-          <MobileNavButton active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} icon={<ShoppingCart size={20} />} label={t.orders} count={orders.length} />
-          <MobileNavButton active={activeTab === 'advisor'} onClick={() => setActiveTab('advisor')} icon={<MessageSquareText size={20} />} label={t.advisor} />
+          {userRole === 'MANAGER' && (
+              <>
+                <MobileNavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={20} />} label={t.dashboard} />
+                <MobileNavButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={20} />} label={t.scanner} />
+                <MobileNavButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon={<Package size={20} />} label={t.inventory} />
+                <MobileNavButton active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} icon={<ShoppingCart size={20} />} label={t.orders} count={orders.length} />
+              </>
+          )}
+
+          {userRole === 'CASHIER' && (
+               <MobileNavButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={20} />} label={t.scanner} />
+          )}
+
+          <MobileNavButton active={activeTab === 'wishlist'} onClick={() => setActiveTab('wishlist')} icon={<Heart size={20} />} label={t.wishlist} count={wishlist.length} />
+
+          {userRole === 'MANAGER' && (
+             <MobileNavButton active={activeTab === 'advisor'} onClick={() => setActiveTab('advisor')} icon={<MessageSquareText size={20} />} label={t.advisor} />
+          )}
       </nav>
     </div>
   );

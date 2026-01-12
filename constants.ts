@@ -6,6 +6,8 @@ export const DAYS_HU = ["Hétfő", "Kedd", "Szerda", "Csütörtök", "Péntek", 
 export const METHODS_RO = ["Email", "Telefon", "Online", "Agent"];
 export const METHODS_HU = ["Email", "Telefon", "Online", "Ügynök"];
 
+export const STORE_LOCATIONS = ['Cherechiu', 'Adoni', 'Valea lui Mihai'];
+
 export const TRANSLATIONS: Record<Language, Translation> = {
   RO: {
     dashboard: "Panou de Control",
@@ -63,17 +65,25 @@ export const TRANSLATIONS: Record<Language, Translation> = {
     send: "Trimite",
     close: "Închide",
 
-    startScan: "Start Scanare",
-    stopScan: "Stop Scanare",
+    startScan: "Start Cameră",
+    stopScan: "Oprește Cameră",
     scannedCodes: "Coduri Scanate",
     copy: "Copiază",
     cameraError: "Eroare la accesarea camerei. Verifică permisiunile.",
+    tapToScan: "Apasă pe video pentru a scana",
 
-    role: "Manager Magazin",
+    role: "Rol",
     language: "Limbă / Nyelv",
     noData: "Nu există date. Adaugă ceva!",
     confirmDelete: "Ești sigur?",
-    other: "Altă metodă (Scrie manual)"
+    other: "Altă metodă (Scrie manual)",
+
+    selectStore: "Selectează Magazinul",
+    selectRole: "Selectează Rolul",
+    roles: {
+        manager: "Șef de Magazin",
+        cashier: "Casier"
+    }
   },
   HU: {
     dashboard: "Vezérlőpult",
@@ -136,11 +146,19 @@ export const TRANSLATIONS: Record<Language, Translation> = {
     scannedCodes: "Beolvasott Kódok",
     copy: "Másolás",
     cameraError: "Hiba a kamera elérésekor. Ellenőrizze a jogosultságokat.",
+    tapToScan: "Koppintson a képre a beolvasáshoz",
 
-    role: "Üzletvezető",
+    role: "Szerepkör",
     language: "Limbă / Nyelv",
     noData: "Nincs adat. Adjon hozzá valamit!",
     confirmDelete: "Biztos benne?",
-    other: "Egyéb mód (Kézi megadás)"
+    other: "Egyéb mód (Kézi megadás)",
+
+    selectStore: "Válasszon Üzletet",
+    selectRole: "Válasszon Szerepkört",
+    roles: {
+        manager: "Üzletvezető",
+        cashier: "Pénztáros (Casier)"
+    }
   }
 };

@@ -9,9 +9,10 @@ interface SuppliersProps {
   lang: Language;
   suppliers: Supplier[];
   setSuppliers: React.Dispatch<React.SetStateAction<Supplier[]>>;
+  storeLocation?: string;
 }
 
-const Suppliers: React.FC<SuppliersProps> = ({ t, lang, suppliers, setSuppliers }) => {
+const Suppliers: React.FC<SuppliersProps> = ({ t, lang, suppliers, setSuppliers, storeLocation }) => {
   const [showForm, setShowForm] = useState(false);
   const [newSupplier, setNewSupplier] = useState<Partial<Supplier>>({});
   const [isCustomMethod, setIsCustomMethod] = useState(false);
@@ -31,7 +32,8 @@ const Suppliers: React.FC<SuppliersProps> = ({ t, lang, suppliers, setSuppliers 
       orderMethod: newSupplier.orderMethod || 'Email',
       orderDay: newSupplier.orderDay,
       deliveryDay: newSupplier.deliveryDay || '',
-      user_id: (await supabase.auth.getUser()).data.user?.id
+      user_id: (await supabase.auth.getUser()).data.user?.id,
+      store_location: storeLocation
     };
     
     const { data, error } = await supabase

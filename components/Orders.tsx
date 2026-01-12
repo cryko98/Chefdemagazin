@@ -10,9 +10,10 @@ interface OrdersProps {
   suppliers: Supplier[];
   orders: OrderItem[];
   setOrders: React.Dispatch<React.SetStateAction<OrderItem[]>>;
+  storeLocation?: string;
 }
 
-const Orders: React.FC<OrdersProps> = ({ t, lang, suppliers, orders, setOrders }) => {
+const Orders: React.FC<OrdersProps> = ({ t, lang, suppliers, orders, setOrders, storeLocation }) => {
   const [newItemName, setNewItemName] = useState('');
   const [newItemQty, setNewItemQty] = useState(1);
   const [newItemUnit, setNewItemUnit] = useState<Unit>('pcs');
@@ -47,7 +48,8 @@ const Orders: React.FC<OrdersProps> = ({ t, lang, suppliers, orders, setOrders }
       unit: newItemUnit,
       supplierId: activeSupplierId,
       isAdHoc: true,
-      user_id: (await supabase.auth.getUser()).data.user?.id
+      user_id: (await supabase.auth.getUser()).data.user?.id,
+      store_location: storeLocation
     };
     
     const { data, error } = await supabase.from('orders').insert([payload]).select().single();

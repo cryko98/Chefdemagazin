@@ -10,9 +10,10 @@ interface InventoryProps {
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
   suppliers: Supplier[];
   setOrders: React.Dispatch<React.SetStateAction<OrderItem[]>>;
+  storeLocation?: string;
 }
 
-const Inventory: React.FC<InventoryProps> = ({ t, lang, products, setProducts, suppliers, setOrders }) => {
+const Inventory: React.FC<InventoryProps> = ({ t, lang, products, setProducts, suppliers, setOrders, storeLocation }) => {
   const [showForm, setShowForm] = useState(false);
   const [newProduct, setNewProduct] = useState<Partial<Product>>({});
   const [loading, setLoading] = useState(false);
@@ -27,7 +28,8 @@ const Inventory: React.FC<InventoryProps> = ({ t, lang, products, setProducts, s
       stock: parseInt(newProduct.stock as any) || 0,
       price: parseFloat(newProduct.price as any) || 0,
       supplierId: newProduct.supplierId,
-      user_id: (await supabase.auth.getUser()).data.user?.id
+      user_id: (await supabase.auth.getUser()).data.user?.id,
+      store_location: storeLocation
     };
 
     const { data, error } = await supabase.from('products').insert([productPayload]).select().single();
@@ -53,13 +55,14 @@ const Inventory: React.FC<InventoryProps> = ({ t, lang, products, setProducts, s
   };
 
   const handleAddToOrder = async (product: Product) => {
-    // Check if exists
+    // Check if exists within this store context (filtered by RLS or query, but checking props here for safety)
     const { data: existingData } = await supabase
         .from('orders')
         .select('*')
         .eq('name', product.name)
         .eq('supplierId', product.supplierId)
         .eq('unit', 'pcs')
+        .eq('store_location', storeLocation)
         .single();
     
     if (existingData) {
@@ -76,7 +79,8 @@ const Inventory: React.FC<InventoryProps> = ({ t, lang, products, setProducts, s
             unit: 'pcs',
             supplierId: product.supplierId,
             isAdHoc: false,
-            user_id: (await supabase.auth.getUser()).data.user?.id
+            user_id: (await supabase.auth.getUser()).data.user?.id,
+            store_location: storeLocation
         }
         const { data: created } = await supabase.from('orders').insert([payload]).select().single();
         if(created) {

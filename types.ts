@@ -5,6 +5,10 @@ export type OrderMethod = string;
 
 export type Unit = 'pcs' | 'kg' | 'box';
 
+export type UserRole = 'MANAGER' | 'CASHIER';
+
+export type StoreLocation = 'Cherechiu' | 'Adoni' | 'Valea lui Mihai';
+
 export interface Supplier {
   id: string;
   name: string;
@@ -12,6 +16,7 @@ export interface Supplier {
   orderMethod: OrderMethod;
   orderDay: string;
   deliveryDay: string;
+  store_location?: string;
 }
 
 export interface Product {
@@ -21,6 +26,7 @@ export interface Product {
   stock: number;
   price: number;
   supplierId: string;
+  store_location?: string;
 }
 
 export interface OrderItem {
@@ -30,6 +36,7 @@ export interface OrderItem {
   unit: Unit;
   supplierId: string;
   isAdHoc: boolean; // True if manually typed, false if from inventory
+  store_location?: string;
 }
 
 export interface WishlistItem {
@@ -37,6 +44,7 @@ export interface WishlistItem {
   name: string;
   addedDate: string;
   notes?: string;
+  store_location?: string;
 }
 
 export interface Translation {
@@ -107,6 +115,7 @@ export interface Translation {
   scannedCodes: string;
   copy: string;
   cameraError: string;
+  tapToScan: string;
   
   // General
   role: string;
@@ -114,6 +123,14 @@ export interface Translation {
   noData: string;
   confirmDelete: string;
   other: string;
+  
+  // Auth
+  selectStore: string;
+  selectRole: string;
+  roles: {
+      manager: string;
+      cashier: string;
+  };
 }
 
 export interface Message {

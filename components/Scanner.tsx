@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Copy, StopCircle, PlayCircle, ScanLine, AlertCircle, RefreshCw } from 'lucide-react';
+import { Copy, StopCircle, PlayCircle, ScanLine, AlertCircle, RefreshCw, Hand } from 'lucide-react';
 import { Language, Translation } from '../types';
 
 interface ScannerProps {
@@ -24,8 +24,8 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   // Ref to track component mount status to prevent race conditions
   const isMounted = useRef(true);
-  // Ref to track last scanned item for debouncing
-  const lastScanRef = useRef<{ code: string; time: number } | null>(null);
+  // Ref to track if we should capture the next frame
+  const captureRequested = useRef(false);
 
   useEffect(() => {
     isMounted.current = true;
@@ -83,9 +83,10 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
             { facingMode: "environment" }, // Prefer back camera
             config,
             (decodedText, decodedResult) => {
-                // Success callback
-                if (isMounted.current) {
+                // Check if user requested a capture by clicking/tapping
+                if (captureRequested.current && isMounted.current) {
                     onScanSuccess(decodedText, decodedResult);
+                    captureRequested.current = false; // Reset immediately so we don't scan again
                 }
             },
             (errorMessage) => {
@@ -131,20 +132,17 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
       }
   };
 
+  const triggerCapture = () => {
+      if (isScanning && !cameraLoading && !permissionError) {
+          captureRequested.current = true;
+          // Feedback vibration
+          if (navigator.vibrate) {
+            navigator.vibrate(50);
+        }
+      }
+  }
+
   const onScanSuccess = (decodedText: string, decodedResult: any) => {
-    const now = Date.now();
-    
-    // Check if same code was scanned recently (within 2.5 seconds)
-    // This prevents the "machine gun" effect where one barcode triggers multiple scans instantly
-    if (lastScanRef.current && 
-        lastScanRef.current.code === decodedText && 
-        now - lastScanRef.current.time < 2500) {
-        return;
-    }
-
-    // Update last scan ref
-    lastScanRef.current = { code: decodedText, time: now };
-
     setScannedItems(prev => {
         const newItem: ScannedItem = {
             code: decodedText,
@@ -152,9 +150,9 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
             format: decodedResult?.result?.format?.formatName || 'BARCODE'
         };
         
-        // Vibrate if supported to give feedback
+        // Vibrate heavily on success
         if (navigator.vibrate) {
-            navigator.vibrate(200);
+            navigator.vibrate([100, 50, 100]);
         }
 
         return [newItem, ...prev];
@@ -167,7 +165,6 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
 
   const clearList = () => {
       setScannedItems([]);
-      lastScanRef.current = null;
   };
 
   return (
@@ -200,26 +197,41 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
         </div>
 
         {/* Camera Container */}
-        <div className="relative bg-black rounded-lg overflow-hidden min-h-[300px] flex items-center justify-center aspect-square md:aspect-video max-h-[60vh]">
+        <div 
+            onClick={triggerCapture}
+            className="relative bg-black rounded-lg overflow-hidden min-h-[300px] flex items-center justify-center aspect-square md:aspect-video max-h-[60vh] cursor-pointer group active:scale-[0.98] transition-transform"
+        >
             
             {/* Loading State */}
             {cameraLoading && !permissionError && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10">
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10 pointer-events-none">
                     <RefreshCw className="w-8 h-8 animate-spin mb-2 text-lime-500" />
                     <p className="text-sm">Starting Camera...</p>
                 </div>
             )}
 
+            {/* Tap Instruction Overlay (Only visible when scanning and running) */}
+            {isScanning && !cameraLoading && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none opacity-50 group-hover:opacity-100 transition-opacity">
+                    <div className="bg-black/40 p-4 rounded-full backdrop-blur-sm border-2 border-white/30">
+                         <Hand className="w-12 h-12 text-white/80" />
+                    </div>
+                    <p className="mt-4 text-white font-bold text-lg shadow-black drop-shadow-md bg-black/20 px-3 py-1 rounded-full">
+                        {t.tapToScan}
+                    </p>
+                </div>
+            )}
+
             {/* Error State */}
             {permissionError && (
-                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900/90 p-6 text-center z-20">
+                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900/90 p-6 text-center z-20 cursor-default">
                     <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
                     <p className="mb-2 font-bold">{t.cameraError}</p>
                     <p className="text-xs text-slate-400 mb-4 max-w-xs">
                         Please ensure you have granted camera permissions to this site. On mobile, you may need to tap "Retry" below.
                     </p>
                     <button 
-                        onClick={handleManualRetry} 
+                        onClick={(e) => { e.stopPropagation(); handleManualRetry(); }} 
                         className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors"
                     >
                         Retry Camera
@@ -230,6 +242,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
             {/* The actual video element container */}
             <div id="reader" className="w-full h-full object-cover"></div>
         </div>
+        <p className="text-center text-xs text-slate-400 mt-2">{t.tapToScan}</p>
       </div>
 
       {/* Results List */}

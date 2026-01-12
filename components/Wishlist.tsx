@@ -8,9 +8,10 @@ interface WishlistProps {
   lang: Language;
   wishlist: WishlistItem[];
   setWishlist: React.Dispatch<React.SetStateAction<WishlistItem[]>>;
+  storeLocation?: string;
 }
 
-const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist }) => {
+const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist, storeLocation }) => {
   const [newItemName, setNewItemName] = useState('');
   const [newItemNote, setNewItemNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,7 +24,8 @@ const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist }) =
       name: newItemName,
       addedDate: new Date().toLocaleDateString(),
       notes: newItemNote,
-      user_id: (await supabase.auth.getUser()).data.user?.id
+      user_id: (await supabase.auth.getUser()).data.user?.id,
+      store_location: storeLocation
     };
     
     const { data, error } = await supabase.from('wishlist').insert([payload]).select().single();
