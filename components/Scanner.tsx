@@ -20,8 +20,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   // Ref to hold the scanner instance
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isMounted = useRef(true);
-  const captureRequested = useRef(false);
-
+  
   // Sound effect for successful scan
   const beepSound = useRef<HTMLAudioElement | null>(null);
 
@@ -33,19 +32,35 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
     beepSound.current.volume = 0.5;
 
     fetchScannedItems();
+
+    // Setup Real-time subscription for scanned items
+    const channel = supabase.channel('scanned-items-realtime')
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'scanned_items' },
+            (payload) => {
+                // If a new item is inserted, we could manually push it, 
+                // but to keep sort order and filtering strict, re-fetching is safer and fast enough.
+                fetchScannedItems();
+            }
+        )
+        .subscribe();
     
     // Cleanup function
     return () => {
       isMounted.current = false;
       stopScanner();
+      supabase.removeChannel(channel);
     };
   }, []);
 
   const fetchScannedItems = async () => {
-      setDataLoading(true);
+      // Don't show loading spinner on background refreshes to avoid UI flickering
+      if (scannedItems.length === 0) setDataLoading(true);
+      
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        // FIXED: Add fallback to 'Cherechiu' if metadata is missing/undefined
+        // Fallback to 'Cherechiu' if metadata is missing/undefined
         const storeLocation = user?.user_metadata?.store_location || 'Cherechiu';
 
         if (user) {
@@ -55,7 +70,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
                 .eq('store_location', storeLocation)
                 .order('created_at', { ascending: false });
             
-            if (data && !error) {
+            if (data && !error && isMounted.current) {
                 setScannedItems(data);
             }
         }
@@ -67,7 +82,9 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   };
 
   const handleRefresh = async () => {
+      setDataLoading(true);
       await fetchScannedItems();
+      setDataLoading(false);
   }
 
   const stopScanner = async () => {
@@ -169,7 +186,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
         user_id: user.id
     };
 
-    // Optimistic UI update
+    // Optimistic UI update for the scanner user (makes it feel instant)
     const tempId = Math.random().toString();
     const tempItem: ScannedItem = {
         id: tempId,
@@ -192,7 +209,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
         console.error("Save error", error);
         // Revert on error
         setScannedItems(prev => prev.filter(i => i.id !== tempId));
-        alert(`Failed to save code. Database error: ${error.message}. Please run the updated SQL script.`);
+        alert(`Failed to save code. Database error: ${error.message}. Please check table permissions.`);
     } else if (data) {
         // Replace temp with real data
         setScannedItems(prev => prev.map(i => i.id === tempId ? data : i));

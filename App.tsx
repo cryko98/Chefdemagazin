@@ -60,6 +60,42 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Real-time Subscription Setup
+  useEffect(() => {
+      if (!session || !userStore) return;
+
+      // Subscribe to all changes in the current store location context
+      // Note: We filter by logic in the fetch, but subscribe to table events.
+      // Ideally, Supabase RLS prevents receiving events for other stores, 
+      // but we re-fetch to be safe and ensure consistent state.
+      const channels = supabase.channel('custom-all-channel')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'suppliers' },
+          () => fetchData(userStore)
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'products' },
+          () => fetchData(userStore)
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'orders' },
+          () => fetchData(userStore)
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'wishlist' },
+          () => fetchData(userStore)
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channels);
+      };
+  }, [session, userStore]);
+
   const initializeUser = (session: any) => {
       const metadata = session.user.user_metadata;
       const role = metadata?.role || 'MANAGER';
@@ -77,7 +113,7 @@ const App: React.FC = () => {
   };
 
   const fetchData = async (storeLocation: string) => {
-    setLoading(true);
+    // Note: We don't set global loading=true here to avoid flickering on real-time updates
     try {
         // Fetch data filtered by the specific store location
         const [supRes, prodRes, ordRes, wishRes] = await Promise.all([
