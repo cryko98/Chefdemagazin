@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Html5QrcodeScanner, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Copy, Trash2, StopCircle, PlayCircle, ScanLine, AlertCircle } from 'lucide-react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+import { Copy, StopCircle, PlayCircle, ScanLine, AlertCircle, RefreshCw } from 'lucide-react';
 import { Language, Translation } from '../types';
 
 interface ScannerProps {
@@ -18,65 +18,115 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [permissionError, setPermissionError] = useState(false);
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const [cameraLoading, setCameraLoading] = useState(true);
+  
+  // Ref to hold the scanner instance
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  // Ref to track component mount status to prevent race conditions
+  const isMounted = useRef(true);
 
   useEffect(() => {
-    // Auto-start scanning when component mounts
-    startScanning();
+    isMounted.current = true;
+    
+    // Initialize scanner immediately on mount
+    const initScanner = async () => {
+        // Small delay to ensure the DOM element "reader" is rendered
+        await new Promise(r => setTimeout(r, 100));
+        
+        if (!isMounted.current) return;
 
-    // Cleanup on unmount
+        // Cleanup existing instance if any
+        if (scannerRef.current) {
+            try {
+                await scannerRef.current.stop();
+                await scannerRef.current.clear();
+            } catch (e) { 
+                // ignore stop errors
+            }
+        }
+
+        const html5QrCode = new Html5Qrcode("reader");
+        scannerRef.current = html5QrCode;
+
+        startScanning(html5QrCode);
+    };
+
+    initScanner();
+
+    // Cleanup function
     return () => {
-      stopScanning();
+      isMounted.current = false;
+      if (scannerRef.current && scannerRef.current.isScanning) {
+          scannerRef.current.stop()
+            .then(() => scannerRef.current?.clear())
+            .catch(err => console.warn("Scanner stop error", err));
+      }
     };
   }, []);
 
-  const startScanning = () => {
-    if (isScanning || scannerRef.current) return;
+  const startScanning = async (scannerInstance: Html5Qrcode) => {
+    if (!scannerInstance) return;
+    
+    setPermissionError(false);
+    setCameraLoading(true);
 
-    // Use a small timeout to ensure DOM element exists
-    setTimeout(() => {
-        try {
-            const scanner = new Html5QrcodeScanner(
-                "reader",
-                { 
-                    fps: 10, 
-                    qrbox: { width: 250, height: 250 },
-                    aspectRatio: 1.0,
-                    // Prefer back camera on mobile
-                    videoConstraints: {
-                        facingMode: "environment" 
-                    },
-                    formatsToSupport: [
-                        Html5QrcodeSupportedFormats.EAN_13,
-                        Html5QrcodeSupportedFormats.EAN_8,
-                        Html5QrcodeSupportedFormats.UPC_A,
-                        Html5QrcodeSupportedFormats.UPC_E,
-                        Html5QrcodeSupportedFormats.QR_CODE
-                    ]
-                },
-                /* verbose= */ false
-            );
+    const config = { 
+        fps: 10, 
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1.0
+    };
 
-            scanner.render(onScanSuccess, onScanFailure);
-            scannerRef.current = scanner;
+    try {
+        await scannerInstance.start(
+            { facingMode: "environment" }, // Prefer back camera
+            config,
+            (decodedText, decodedResult) => {
+                // Success callback
+                if (isMounted.current) {
+                    onScanSuccess(decodedText, decodedResult);
+                }
+            },
+            (errorMessage) => {
+                // Error callback (runs on every frame that doesn't have a code)
+                // We ignore this to keep logs clean
+            }
+        );
+        
+        if (isMounted.current) {
             setIsScanning(true);
-            setPermissionError(false);
-        } catch (e) {
-            console.error(e);
+            setCameraLoading(false);
+        }
+    } catch (err) {
+        console.error("Error starting scanner:", err);
+        if (isMounted.current) {
+            setIsScanning(false);
+            setCameraLoading(false);
             setPermissionError(true);
         }
-    }, 100);
+    }
   };
 
-  const stopScanning = () => {
-    if (scannerRef.current) {
-      scannerRef.current.clear().then(() => {
-        setIsScanning(false);
-        scannerRef.current = null;
-      }).catch((err) => {
-        console.error("Failed to stop scanner", err);
-      });
-    }
+  const handleManualRetry = () => {
+      if (scannerRef.current) {
+          startScanning(scannerRef.current);
+      }
+  };
+
+  const handleStop = async () => {
+      if (scannerRef.current && isScanning) {
+          try {
+              await scannerRef.current.stop();
+              setIsScanning(false);
+          } catch (e) {
+              console.error("Stop failed", e);
+          }
+      }
+  };
+  
+  const handleStart = () => {
+      if (scannerRef.current) {
+          startScanning(scannerRef.current);
+      }
   };
 
   const onScanSuccess = (decodedText: string, decodedResult: any) => {
@@ -91,12 +141,14 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
             timestamp: new Date().toLocaleTimeString(),
             format: decodedResult?.result?.format?.formatName || 'BARCODE'
         };
+        
+        // Vibrate if supported to give feedback
+        if (navigator.vibrate) {
+            navigator.vibrate(200);
+        }
+
         return [newItem, ...prev];
     });
-  };
-
-  const onScanFailure = (error: any) => {
-     // Standard behavior is to ignore frames with no barcode
   };
 
   const copyToClipboard = (text: string) => {
@@ -115,35 +167,57 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
                 <ScanLine className="text-orange-500" />
                 <span>{t.scanner}</span>
             </h2>
-            {isScanning ? (
-                <button 
-                    onClick={stopScanning}
-                    className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
-                >
-                    <StopCircle size={16} />
-                    <span>{t.stopScan}</span>
-                </button>
-            ) : (
-                <button 
-                    onClick={startScanning}
-                    className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-lime-600 text-white rounded-lg hover:bg-lime-700 transition-colors"
-                >
-                    <PlayCircle size={16} />
-                    <span>{t.startScan}</span>
-                </button>
-            )}
+            <div className="flex space-x-2">
+                {isScanning ? (
+                    <button 
+                        onClick={handleStop}
+                        className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                    >
+                        <StopCircle size={16} />
+                        <span className="hidden sm:inline">{t.stopScan}</span>
+                    </button>
+                ) : (
+                    <button 
+                        onClick={handleStart}
+                        className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-lime-600 text-white rounded-lg hover:bg-lime-700 transition-colors"
+                    >
+                        <PlayCircle size={16} />
+                        <span className="hidden sm:inline">{t.startScan}</span>
+                    </button>
+                )}
+            </div>
         </div>
 
         {/* Camera Container */}
-        <div className="relative bg-black rounded-lg overflow-hidden min-h-[300px] flex items-center justify-center">
+        <div className="relative bg-black rounded-lg overflow-hidden min-h-[300px] flex items-center justify-center aspect-square md:aspect-video max-h-[60vh]">
+            
+            {/* Loading State */}
+            {cameraLoading && !permissionError && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10">
+                    <RefreshCw className="w-8 h-8 animate-spin mb-2 text-lime-500" />
+                    <p className="text-sm">Starting Camera...</p>
+                </div>
+            )}
+
+            {/* Error State */}
             {permissionError && (
-                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900 p-6 text-center z-10">
+                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900/90 p-6 text-center z-20">
                     <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
-                    <p className="mb-2">{t.cameraError}</p>
-                    <button onClick={startScanning} className="mt-4 px-4 py-2 bg-slate-700 rounded text-sm">Retry</button>
+                    <p className="mb-2 font-bold">{t.cameraError}</p>
+                    <p className="text-xs text-slate-400 mb-4 max-w-xs">
+                        Please ensure you have granted camera permissions to this site. On mobile, you may need to tap "Retry" below.
+                    </p>
+                    <button 
+                        onClick={handleManualRetry} 
+                        className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors"
+                    >
+                        Retry Camera
+                    </button>
                  </div>
             )}
-            <div id="reader" className="w-full h-full"></div>
+            
+            {/* The actual video element container */}
+            <div id="reader" className="w-full h-full object-cover"></div>
         </div>
       </div>
 
