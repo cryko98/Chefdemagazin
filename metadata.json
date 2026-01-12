@@ -1,0 +1,7 @@
+{
+  "name": "RetailManager RO/HU",
+  "description": "A comprehensive dashboard for store managers in Romania, featuring bilingual support (RO/HU), inventory tracking, sales analytics, and an AI assistant for drafting supplier emails and answering business questions.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
