@@ -64,21 +64,20 @@ const App: React.FC = () => {
   useEffect(() => {
       if (!session || !userStore) return;
 
-      // Subscribe to all changes in the current store location context
-      // Note: We filter by logic in the fetch, but subscribe to table events.
-      // Ideally, Supabase RLS prevents receiving events for other stores, 
-      // but we re-fetch to be safe and ensure consistent state.
-      const channels = supabase.channel('custom-all-channel')
+      // We separate subscriptions to ensure stability
+      const wishlistChannel = supabase.channel('wishlist-updates')
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'suppliers' },
-          () => fetchData(userStore)
+          { event: '*', schema: 'public', table: 'wishlist' },
+          (payload) => {
+              // Fetch only wishlist to be efficient
+               supabase.from('wishlist').select('*').eq('store_location', userStore)
+               .then(({data}) => { if(data) setWishlist(data); });
+          }
         )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'products' },
-          () => fetchData(userStore)
-        )
+        .subscribe();
+
+      const generalChannel = supabase.channel('general-updates')
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'orders' },
@@ -86,13 +85,19 @@ const App: React.FC = () => {
         )
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'wishlist' },
+          { event: '*', schema: 'public', table: 'products' },
+          () => fetchData(userStore)
+        )
+         .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'suppliers' },
           () => fetchData(userStore)
         )
         .subscribe();
 
       return () => {
-        supabase.removeChannel(channels);
+        supabase.removeChannel(wishlistChannel);
+        supabase.removeChannel(generalChannel);
       };
   }, [session, userStore]);
 
@@ -113,7 +118,6 @@ const App: React.FC = () => {
   };
 
   const fetchData = async (storeLocation: string) => {
-    // Note: We don't set global loading=true here to avoid flickering on real-time updates
     try {
         // Fetch data filtered by the specific store location
         const [supRes, prodRes, ordRes, wishRes] = await Promise.all([

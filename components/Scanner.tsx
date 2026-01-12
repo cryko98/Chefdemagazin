@@ -15,7 +15,10 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   const [permissionError, setPermissionError] = useState(false);
   const [cameraLoading, setCameraLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
-  const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
+  
+  // FIXED: Use useRef instead of useState for scan cooldown to handle rapid camera frames synchronously
+  const lastScannedCodeRef = useRef<string | null>(null);
+  const lastScanTimeRef = useRef<number>(0);
   
   // Ref to hold the scanner instance
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -39,8 +42,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
             'postgres_changes',
             { event: '*', schema: 'public', table: 'scanned_items' },
             (payload) => {
-                // If a new item is inserted, we could manually push it, 
-                // but to keep sort order and filtering strict, re-fetching is safer and fast enough.
+                // Refresh list when other devices add items
                 fetchScannedItems();
             }
         )
@@ -109,12 +111,12 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
     }
 
     const config = { 
-        fps: 10, // Reduced FPS slightly to save battery and processing
-        qrbox: { width: 250, height: 150 }, // Adjusted box
+        fps: 10,
+        qrbox: { width: 250, height: 150 },
         aspectRatio: 1.0,
         videoConstraints: {
             facingMode: "environment",
-            focusMode: "continuous", // Explicitly request continuous focus
+            focusMode: "continuous",
         },
         experimentalFeatures: {
             useBarCodeDetectorIfSupported: true
@@ -157,14 +159,18 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   }
 
   const onScanSuccess = async (decodedText: string, decodedResult: any) => {
-    // Debounce: If we scanned this exact code in the last 2 seconds, ignore it
-    if (decodedText === lastScannedCode) return;
+    const now = Date.now();
+    
+    // STRICT DEBOUNCE LOGIC using Refs (Instant check)
+    // 1. Check if same code
+    // 2. Check if scanned within last 2.5 seconds
+    if (decodedText === lastScannedCodeRef.current && (now - lastScanTimeRef.current < 2500)) {
+        return;
+    }
 
-    // Set cooldown
-    setLastScannedCode(decodedText);
-    setTimeout(() => {
-        if (isMounted.current) setLastScannedCode(null);
-    }, 2000);
+    // Update Refs immediately to block subsequent frames
+    lastScannedCodeRef.current = decodedText;
+    lastScanTimeRef.current = now;
 
     // Play beep
     if (beepSound.current) {
@@ -209,7 +215,9 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
         console.error("Save error", error);
         // Revert on error
         setScannedItems(prev => prev.filter(i => i.id !== tempId));
-        alert(`Failed to save code. Database error: ${error.message}. Please check table permissions.`);
+        // Reset the lock so they can try again if it failed
+        lastScannedCodeRef.current = null;
+        alert(`Failed to save code. Database error: ${error.message}.`);
     } else if (data) {
         // Replace temp with real data
         setScannedItems(prev => prev.map(i => i.id === tempId ? data : i));
