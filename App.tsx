@@ -60,44 +60,36 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Real-time Subscription Setup
+  // GLOBAL REAL-TIME SUBSCRIPTION
   useEffect(() => {
       if (!session || !userStore) return;
 
-      // We separate subscriptions to ensure stability
-      const wishlistChannel = supabase.channel('wishlist-updates')
+      // Subscribe to ANY change in the relevant tables (Insert, Update, Delete)
+      // We do not filter by store_location in the subscription itself to avoid RLS filtering issues on the event.
+      // Instead, we listen to everything and then re-fetch the filtered data.
+      const channel = supabase.channel('global-store-updates')
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'wishlist' },
           (payload) => {
-              // Fetch only wishlist to be efficient
-               supabase.from('wishlist').select('*').eq('store_location', userStore)
-               .then(({data}) => { if(data) setWishlist(data); });
+               // Reload wishlist
+               fetchWishlist(userStore);
           }
         )
-        .subscribe();
-
-      const generalChannel = supabase.channel('general-updates')
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'orders' },
           () => fetchData(userStore)
         )
         .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'products' },
-          () => fetchData(userStore)
-        )
-         .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'suppliers' },
-          () => fetchData(userStore)
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'products' },
+            () => fetchData(userStore)
         )
         .subscribe();
 
       return () => {
-        supabase.removeChannel(wishlistChannel);
-        supabase.removeChannel(generalChannel);
+        supabase.removeChannel(channel);
       };
   }, [session, userStore]);
 
@@ -116,6 +108,11 @@ const App: React.FC = () => {
 
       fetchData(store);
   };
+
+  const fetchWishlist = async (storeLocation: string) => {
+      const { data } = await supabase.from('wishlist').select('*').eq('store_location', storeLocation);
+      if (data) setWishlist(data);
+  }
 
   const fetchData = async (storeLocation: string) => {
     try {

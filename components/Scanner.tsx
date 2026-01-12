@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Copy, StopCircle, PlayCircle, ScanLine, AlertCircle, RefreshCw, Hand, Trash2, Loader2 } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
+import { Copy, StopCircle, PlayCircle, ScanLine, AlertCircle, RefreshCw, Hand, Trash2, Aperture } from 'lucide-react';
 import { Language, Translation, ScannedItem } from '../types';
 import { supabase } from '../services/supabase';
 
@@ -16,13 +16,15 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   const [cameraLoading, setCameraLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
   
-  // FIXED: Use useRef instead of useState for scan cooldown to handle rapid camera frames synchronously
-  const lastScannedCodeRef = useRef<string | null>(null);
-  const lastScanTimeRef = useRef<number>(0);
+  // Controls whether we are currently waiting for a code to be found after a click
+  const [isCapturePending, setIsCapturePending] = useState(false);
   
   // Ref to hold the scanner instance
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const isMounted = useRef(true);
+  
+  // Using ref to communicate with the callback without closure staleness
+  const captureTriggeredRef = useRef(false);
   
   // Sound effect for successful scan
   const beepSound = useRef<HTMLAudioElement | null>(null);
@@ -41,8 +43,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
         .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'scanned_items' },
-            (payload) => {
-                // Refresh list when other devices add items
+            () => {
                 fetchScannedItems();
             }
         )
@@ -57,12 +58,9 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   }, []);
 
   const fetchScannedItems = async () => {
-      // Don't show loading spinner on background refreshes to avoid UI flickering
-      if (scannedItems.length === 0) setDataLoading(true);
-      
+      // Background refresh
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        // Fallback to 'Cherechiu' if metadata is missing/undefined
         const storeLocation = user?.user_metadata?.store_location || 'Cherechiu';
 
         if (user) {
@@ -78,8 +76,6 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
         }
       } catch (err) {
           console.error("Error fetching items:", err);
-      } finally {
-        if (isMounted.current) setDataLoading(false);
       }
   };
 
@@ -99,19 +95,20 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
           }
       }
       setIsScanning(false);
+      setIsCapturePending(false);
+      captureTriggeredRef.current = false;
   };
 
   const startScanning = async () => {
     setPermissionError(false);
     setCameraLoading(true);
 
-    // If instance exists but not running, try to use it, otherwise create new
     if (!scannerRef.current) {
          scannerRef.current = new Html5Qrcode("reader");
     }
 
     const config = { 
-        fps: 10,
+        fps: 15, // Smooth video
         qrbox: { width: 250, height: 150 },
         aspectRatio: 1.0,
         videoConstraints: {
@@ -128,7 +125,9 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
             { facingMode: "environment" }, 
             config,
             (decodedText, decodedResult) => {
-                if (isMounted.current) {
+                // IMPORTANT: This callback runs continuously whenever a code is visible.
+                // We ONLY process it if the user has clicked the capture button (captureTriggeredRef is true)
+                if (isMounted.current && captureTriggeredRef.current) {
                      onScanSuccess(decodedText, decodedResult);
                 }
             },
@@ -152,36 +151,36 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   };
 
   const triggerCapture = () => {
-      // Manual focus/trigger attempt
-      if (isScanning && !cameraLoading && !permissionError) {
-          if (navigator.vibrate) navigator.vibrate(20);
-      }
+      if (!isScanning || cameraLoading || permissionError) return;
+      
+      // Enable capture for the next valid frame
+      captureTriggeredRef.current = true;
+      setIsCapturePending(true);
+      
+      if (navigator.vibrate) navigator.vibrate(10);
+      
+      // Timeout: If no code found in 3 seconds, reset trigger so user can try again
+      setTimeout(() => {
+          if (isMounted.current && captureTriggeredRef.current) {
+              captureTriggeredRef.current = false;
+              setIsCapturePending(false);
+          }
+      }, 3000);
   }
 
   const onScanSuccess = async (decodedText: string, decodedResult: any) => {
-    const now = Date.now();
-    
-    // STRICT DEBOUNCE LOGIC using Refs (Instant check)
-    // 1. Check if same code
-    // 2. Check if scanned within last 2.5 seconds
-    if (decodedText === lastScannedCodeRef.current && (now - lastScanTimeRef.current < 2500)) {
-        return;
-    }
+    // 1. Immediately lock capturing to prevent double scans
+    captureTriggeredRef.current = false;
+    setIsCapturePending(false);
 
-    // Update Refs immediately to block subsequent frames
-    lastScannedCodeRef.current = decodedText;
-    lastScanTimeRef.current = now;
-
-    // Play beep
+    // 2. Play feedback
     if (beepSound.current) {
         beepSound.current.currentTime = 0;
         beepSound.current.play().catch(e => console.log('Audio play failed', e));
     }
-    
-    // Vibrate
-    if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
+    if (navigator.vibrate) navigator.vibrate([50]);
 
-    // Save to DB
+    // 3. Save to DB
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
@@ -192,7 +191,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
         user_id: user.id
     };
 
-    // Optimistic UI update for the scanner user (makes it feel instant)
+    // Optimistic UI update
     const tempId = Math.random().toString();
     const tempItem: ScannedItem = {
         id: tempId,
@@ -204,7 +203,6 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
     
     setScannedItems(prev => [tempItem, ...prev]);
 
-    // DB Insert
     const { data, error } = await supabase
         .from('scanned_items')
         .insert([newItemPayload])
@@ -213,34 +211,23 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
 
     if (error) {
         console.error("Save error", error);
-        // Revert on error
         setScannedItems(prev => prev.filter(i => i.id !== tempId));
-        // Reset the lock so they can try again if it failed
-        lastScannedCodeRef.current = null;
         alert(`Failed to save code. Database error: ${error.message}.`);
     } else if (data) {
-        // Replace temp with real data
         setScannedItems(prev => prev.map(i => i.id === tempId ? data : i));
     }
   };
 
   const handleDelete = async (id: string) => {
-      // Optimistic delete
       setScannedItems(prev => prev.filter(i => i.id !== id));
-      
       const { error } = await supabase.from('scanned_items').delete().eq('id', id);
-      if (error) {
-          console.error("Delete error", error);
-          fetchScannedItems(); // Revert by refetching
-      }
+      if (error) fetchScannedItems();
   };
 
   const handleClearAll = async () => {
       if (!confirm(t.confirmDelete)) return;
       
-      // Optimistic
       setScannedItems([]);
-
       const { data: { user } } = await supabase.auth.getUser();
       const storeLocation = user?.user_metadata?.store_location || 'Cherechiu';
       
@@ -249,7 +236,6 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
             .from('scanned_items')
             .delete()
             .eq('store_location', storeLocation);
-            
           if (error) fetchScannedItems();
       }
   };
@@ -289,10 +275,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
         </div>
 
         {/* Camera Container */}
-        <div 
-            onClick={triggerCapture}
-            className="relative bg-black rounded-lg overflow-hidden min-h-[300px] flex items-center justify-center aspect-square md:aspect-video max-h-[60vh] cursor-pointer group active:scale-[0.98] transition-transform select-none"
-        >
+        <div className="relative bg-black rounded-lg overflow-hidden min-h-[300px] flex items-center justify-center aspect-square md:aspect-video max-h-[60vh] select-none shadow-inner">
             
             {/* Loading State */}
             {cameraLoading && !permissionError && (
@@ -307,22 +290,51 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
                  <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900/90 p-6 text-center z-20 cursor-default">
                     <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
                     <p className="mb-2 font-bold">{t.cameraError}</p>
-                    <p className="text-xs text-slate-400 mb-4 max-w-xs">
-                        Check browser permissions.
-                    </p>
-                    <button 
-                        onClick={(e) => { e.stopPropagation(); startScanning(); }} 
-                        className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors"
-                    >
-                        Retry
-                    </button>
+                    <button onClick={startScanning} className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors">Retry</button>
                  </div>
             )}
             
             {/* Video Element */}
             <div id="reader" className="w-full h-full object-cover"></div>
+            
+            {/* Capture Button Overlay - Only visible when scanning */}
+            {isScanning && !cameraLoading && (
+                <div className="absolute bottom-6 left-0 right-0 flex justify-center z-30 pointer-events-none">
+                     <button
+                        onClick={triggerCapture}
+                        disabled={isCapturePending}
+                        className={`pointer-events-auto w-16 h-16 rounded-full border-4 flex items-center justify-center shadow-lg transition-all transform active:scale-95 ${
+                            isCapturePending 
+                                ? 'bg-orange-600 border-orange-300 animate-pulse' 
+                                : 'bg-white/20 backdrop-blur-sm border-white hover:bg-white/40'
+                        }`}
+                     >
+                        {isCapturePending ? (
+                            <RefreshCw className="text-white w-8 h-8 animate-spin" />
+                        ) : (
+                            <div className="w-12 h-12 bg-white rounded-full"></div>
+                        )}
+                     </button>
+                </div>
+            )}
+            
+             {/* Reticle / Target */}
+            {isScanning && !cameraLoading && (
+                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                    <div className="w-64 h-48 border-2 border-orange-500/50 rounded-lg relative">
+                        <div className="absolute top-0 left-0 w-4 h-4 border-l-4 border-t-4 border-orange-500 -ml-0.5 -mt-0.5"></div>
+                        <div className="absolute top-0 right-0 w-4 h-4 border-r-4 border-t-4 border-orange-500 -mr-0.5 -mt-0.5"></div>
+                        <div className="absolute bottom-0 left-0 w-4 h-4 border-l-4 border-b-4 border-orange-500 -ml-0.5 -mb-0.5"></div>
+                        <div className="absolute bottom-0 right-0 w-4 h-4 border-r-4 border-b-4 border-orange-500 -mr-0.5 -mb-0.5"></div>
+                    </div>
+                    {/* Instructions */}
+                    <div className="absolute bottom-24 text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm">
+                        Tap button to scan
+                    </div>
+                 </div>
+            )}
+
         </div>
-        <p className="text-center text-xs text-slate-400 mt-2">{t.tapToScan}</p>
       </div>
 
       {/* Results List */}
@@ -334,7 +346,6 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
                     onClick={handleRefresh}
                     disabled={dataLoading}
                     className="p-1.5 text-slate-400 hover:text-orange-500 hover:bg-slate-100 rounded-lg transition-colors"
-                    title={t.refresh}
                 >
                     <RefreshCw size={14} className={dataLoading ? "animate-spin" : ""} />
                 </button>
@@ -358,14 +369,12 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
                         <button 
                             onClick={() => copyToClipboard(item.code)}
                             className="p-2 bg-slate-100 rounded-full text-slate-500 hover:text-orange-500 hover:bg-orange-50 transition-colors"
-                            title={t.copy}
                         >
                             <Copy size={16} />
                         </button>
                         <button 
                             onClick={() => handleDelete(item.id)}
                             className="p-2 bg-slate-100 rounded-full text-slate-500 hover:text-red-500 hover:bg-red-50 transition-colors"
-                            title={t.delete}
                         >
                             <Trash2 size={16} />
                         </button>
