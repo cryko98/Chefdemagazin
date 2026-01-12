@@ -43,21 +43,27 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
 
   const fetchScannedItems = async () => {
       setDataLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      const storeLocation = user?.user_metadata?.store_location;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        // FIXED: Add fallback to 'Cherechiu' if metadata is missing/undefined
+        const storeLocation = user?.user_metadata?.store_location || 'Cherechiu';
 
-      if (storeLocation) {
-          const { data, error } = await supabase
-            .from('scanned_items')
-            .select('*')
-            .eq('store_location', storeLocation)
-            .order('created_at', { ascending: false });
-          
-          if (data && !error) {
-              setScannedItems(data);
-          }
+        if (user) {
+            const { data, error } = await supabase
+                .from('scanned_items')
+                .select('*')
+                .eq('store_location', storeLocation)
+                .order('created_at', { ascending: false });
+            
+            if (data && !error) {
+                setScannedItems(data);
+            }
+        }
+      } catch (err) {
+          console.error("Error fetching items:", err);
+      } finally {
+        if (isMounted.current) setDataLoading(false);
       }
-      setDataLoading(false);
   };
 
   const handleRefresh = async () => {
@@ -98,25 +104,12 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
         }
     };
 
-    // Limit formats to common retail codes
-    const formatsToSupport = [
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.UPC_A,
-        Html5QrcodeSupportedFormats.UPC_E,
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.QR_CODE,
-    ];
-
     try {
         await scannerRef.current.start(
             { facingMode: "environment" }, 
             config,
             (decodedText, decodedResult) => {
                 if (isMounted.current) {
-                     // Check for user tap OR just auto-scan if needed (but user requested "perfect" which often implies tap-to-focus/scan)
-                     // However, for retail speed, auto-scan is usually better.
-                     // The previous code had "captureRequested". I will relax this to allow standard continuous scanning but with debounce.
                      onScanSuccess(decodedText, decodedResult);
                 }
             },
@@ -142,7 +135,6 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   const triggerCapture = () => {
       // Manual focus/trigger attempt
       if (isScanning && !cameraLoading && !permissionError) {
-          // Some devices support manual focus trigger here
           if (navigator.vibrate) navigator.vibrate(20);
       }
   }
@@ -200,8 +192,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
         console.error("Save error", error);
         // Revert on error
         setScannedItems(prev => prev.filter(i => i.id !== tempId));
-        // Alert the user so they know WHY it disappeared
-        alert(`Failed to save code. Database error: ${error.message}. Please ensure the 'scanned_items' table exists in Supabase.`);
+        alert(`Failed to save code. Database error: ${error.message}. Please run the updated SQL script.`);
     } else if (data) {
         // Replace temp with real data
         setScannedItems(prev => prev.map(i => i.id === tempId ? data : i));
@@ -226,7 +217,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
       setScannedItems([]);
 
       const { data: { user } } = await supabase.auth.getUser();
-      const storeLocation = user?.user_metadata?.store_location;
+      const storeLocation = user?.user_metadata?.store_location || 'Cherechiu';
       
       if (storeLocation) {
           const { error } = await supabase
