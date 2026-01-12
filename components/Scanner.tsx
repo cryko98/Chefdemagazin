@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { Copy, StopCircle, PlayCircle, ScanLine, AlertCircle, RefreshCw, Trash2, Store } from 'lucide-react';
+import { Copy, StopCircle, PlayCircle, ScanLine, AlertCircle, RefreshCw, Trash2, Store, CheckCircle2 } from 'lucide-react';
 import { Language, Translation, ScannedItem } from '../types';
 import { supabase } from '../services/supabase';
 
 interface ScannerProps {
   t: Translation;
   lang: Language;
-  storeLocation?: string; // Added prop for consistency
+  storeLocation?: string;
 }
 
 const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
@@ -33,12 +33,13 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
         fetchScannedItems();
     }
 
-    const channel = supabase.channel('scanned-items-realtime')
+    // Subscribe specifically to scanned_items for this store
+    const channel = supabase.channel('scanned-items-sync')
         .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'scanned_items' },
-            () => {
-                if (storeLocation) fetchScannedItems();
+            (payload) => {
+                if(storeLocation) fetchScannedItems();
             }
         )
         .subscribe();
@@ -48,7 +49,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
       stopScanner();
       supabase.removeChannel(channel);
     };
-  }, [storeLocation]); // Re-run if store changes
+  }, [storeLocation]);
 
   const fetchScannedItems = async () => {
       if (!storeLocation) return;
@@ -78,9 +79,8 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
       if (scannerRef.current && scannerRef.current.isScanning) {
           try {
               await scannerRef.current.stop();
-              await scannerRef.current.clear();
           } catch (e) {
-              // ignore
+              console.warn("Stop scanner error", e);
           }
       }
       setIsScanning(false);
@@ -92,9 +92,11 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
     setPermissionError(false);
     setCameraLoading(true);
 
-    if (!scannerRef.current) {
-         scannerRef.current = new Html5Qrcode("reader");
+    // Always clear existing instance if any
+    if (scannerRef.current) {
+        try { await scannerRef.current.clear(); } catch(e) {}
     }
+    scannerRef.current = new Html5Qrcode("reader");
 
     const config = { 
         fps: 15,
@@ -103,9 +105,6 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
         videoConstraints: {
             facingMode: "environment",
             focusMode: "continuous",
-        },
-        experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true
         }
     };
 
@@ -145,6 +144,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
       
       if (navigator.vibrate) navigator.vibrate(10);
       
+      // Safety timeout
       setTimeout(() => {
           if (isMounted.current && captureTriggeredRef.current) {
               captureTriggeredRef.current = false;
@@ -163,16 +163,28 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
     }
     if (navigator.vibrate) navigator.vibrate([50]);
 
+    // CRITICAL FIX: Ensure storeLocation is valid
+    if (!storeLocation) {
+        alert("Error: Store location not identified. Please re-login.");
+        return;
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user || !storeLocation) return;
+    
+    // Fallback if user is missing (rare)
+    if (!user) {
+        alert("Authentication error. Please re-login.");
+        return;
+    }
 
     const newItemPayload = {
         code: decodedText,
         format: decodedResult?.result?.format?.formatName || 'BARCODE',
-        store_location: storeLocation, // Use prop
+        store_location: storeLocation, 
         user_id: user.id
     };
 
+    // Optimistic UI
     const tempId = Math.random().toString();
     const tempItem: ScannedItem = {
         id: tempId,
@@ -184,6 +196,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
     
     setScannedItems(prev => [tempItem, ...prev]);
 
+    // Database Insert
     const { data, error } = await supabase
         .from('scanned_items')
         .insert([newItemPayload])
@@ -191,20 +204,29 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
         .single();
 
     if (error) {
-        console.error("Save error", error);
+        console.error("Save error details:", error);
         setScannedItems(prev => prev.filter(i => i.id !== tempId));
-        alert(`Save failed: ${error.message}. Please check database permissions.`);
+        
+        if (error.code === '42501') {
+            alert(`Permission denied. The store location '${storeLocation}' might not match your account.`);
+        } else {
+            alert(`Failed to save: ${error.message}`);
+        }
     } else if (data) {
+        // Update optimistic item with real data
         setScannedItems(prev => prev.map(i => i.id === tempId ? data : i));
     }
   };
 
   const handleDelete = async (id: string) => {
+      const prevList = [...scannedItems];
       setScannedItems(prev => prev.filter(i => i.id !== id));
+      
       const { error } = await supabase.from('scanned_items').delete().eq('id', id);
       if (error) {
           console.error("Delete error", error);
-          fetchScannedItems();
+          setScannedItems(prevList);
+          alert("Could not delete item.");
       }
   };
 
@@ -212,6 +234,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
       if (!confirm(t.confirmDelete)) return;
       if (!storeLocation) return;
 
+      const prevList = [...scannedItems];
       setScannedItems([]);
       
       const { error } = await supabase
@@ -219,7 +242,10 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
         .delete()
         .eq('store_location', storeLocation);
         
-      if (error) fetchScannedItems();
+      if (error) {
+          setScannedItems(prevList);
+          alert("Could not clear list.");
+      }
   };
 
   const copyToClipboard = (text: string) => {
@@ -230,52 +256,58 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
   return (
     <div className="space-y-6">
       <div className="bg-white p-4 lg:p-6 rounded-xl shadow-sm border border-slate-200">
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
             <div>
                  <h2 className="text-xl font-bold text-slate-800 flex items-center space-x-2">
                     <ScanLine className="text-orange-500" />
                     <span>{t.scanner}</span>
                 </h2>
-                {storeLocation && (
-                    <div className="flex items-center text-xs text-slate-500 mt-1 bg-slate-100 px-2 py-1 rounded-md w-fit">
-                        <Store size={12} className="mr-1" />
-                        <span>Saving to: <strong className="text-slate-700">{storeLocation}</strong></span>
+                {storeLocation ? (
+                    <div className="flex items-center text-xs text-lime-700 mt-1 bg-lime-50 px-2 py-1 rounded-md w-fit border border-lime-200">
+                        <CheckCircle2 size={12} className="mr-1" />
+                        <span>Saving to: <strong>{storeLocation}</strong></span>
+                    </div>
+                ) : (
+                    <div className="flex items-center text-xs text-red-600 mt-1 bg-red-50 px-2 py-1 rounded-md w-fit border border-red-200">
+                        <AlertCircle size={12} className="mr-1" />
+                        <span>Store location missing!</span>
                     </div>
                 )}
             </div>
-            <div className="flex space-x-2">
+            <div className="flex space-x-2 w-full md:w-auto">
                 {isScanning ? (
                     <button 
                         onClick={stopScanner}
-                        className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                        className="flex-1 md:flex-none flex items-center justify-center space-x-2 px-4 py-2 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
                     >
                         <StopCircle size={16} />
-                        <span className="hidden sm:inline">{t.stopScan}</span>
+                        <span>{t.stopScan}</span>
                     </button>
                 ) : (
                     <button 
                         onClick={startScanning}
-                        className="flex items-center space-x-2 px-3 py-1.5 text-sm bg-lime-600 text-white rounded-lg hover:bg-lime-700 transition-colors"
+                        disabled={!storeLocation}
+                        className="flex-1 md:flex-none flex items-center justify-center space-x-2 px-4 py-2 text-sm bg-lime-600 text-white rounded-lg hover:bg-lime-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <PlayCircle size={16} />
-                        <span className="hidden sm:inline">{t.startScan}</span>
+                        <span>{t.startScan}</span>
                     </button>
                 )}
             </div>
         </div>
 
         {/* Camera Container */}
-        <div className="relative bg-black rounded-lg overflow-hidden min-h-[300px] flex items-center justify-center aspect-square md:aspect-video max-h-[60vh] select-none shadow-inner">
+        <div className="relative bg-black rounded-lg overflow-hidden min-h-[300px] flex items-center justify-center aspect-square md:aspect-video max-h-[60vh] select-none shadow-inner border border-slate-800">
             
             {cameraLoading && !permissionError && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10 pointer-events-none">
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10 pointer-events-none bg-black/50">
                     <RefreshCw className="w-8 h-8 animate-spin mb-2 text-lime-500" />
                     <p className="text-sm">Starting Camera...</p>
                 </div>
             )}
 
             {permissionError && (
-                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900/90 p-6 text-center z-20 cursor-default">
+                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900 p-6 text-center z-20 cursor-default">
                     <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
                     <p className="mb-2 font-bold">{t.cameraError}</p>
                     <button onClick={startScanning} className="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors">Retry</button>
@@ -308,14 +340,14 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
              {/* Reticle */}
             {isScanning && !cameraLoading && (
                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                    <div className="w-64 h-48 border-2 border-orange-500/50 rounded-lg relative">
-                        <div className="absolute top-0 left-0 w-4 h-4 border-l-4 border-t-4 border-orange-500 -ml-0.5 -mt-0.5"></div>
-                        <div className="absolute top-0 right-0 w-4 h-4 border-r-4 border-t-4 border-orange-500 -mr-0.5 -mt-0.5"></div>
-                        <div className="absolute bottom-0 left-0 w-4 h-4 border-l-4 border-b-4 border-orange-500 -ml-0.5 -mb-0.5"></div>
-                        <div className="absolute bottom-0 right-0 w-4 h-4 border-r-4 border-b-4 border-orange-500 -mr-0.5 -mb-0.5"></div>
+                    <div className="w-64 h-48 border-2 border-orange-500/50 rounded-lg relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                        <div className="absolute top-0 left-0 w-8 h-8 border-l-4 border-t-4 border-orange-500 -ml-1 -mt-1"></div>
+                        <div className="absolute top-0 right-0 w-8 h-8 border-r-4 border-t-4 border-orange-500 -mr-1 -mt-1"></div>
+                        <div className="absolute bottom-0 left-0 w-8 h-8 border-l-4 border-b-4 border-orange-500 -ml-1 -mb-1"></div>
+                        <div className="absolute bottom-0 right-0 w-8 h-8 border-r-4 border-b-4 border-orange-500 -mr-1 -mb-1"></div>
                     </div>
-                    <div className="absolute bottom-24 text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm">
-                        Tap button to scan
+                    <div className="absolute bottom-24 text-white text-sm font-medium bg-black/60 px-4 py-2 rounded-full backdrop-blur-sm shadow-sm">
+                        Tap button to capture
                     </div>
                  </div>
             )}

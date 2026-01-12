@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Heart, RefreshCw, Store } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { Language, Translation, WishlistItem } from '../types';
@@ -17,19 +17,45 @@ const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist, sto
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Setup local realtime listener specifically for wishlist items in this view
+  useEffect(() => {
+    if (!storeLocation) return;
+    
+    // Initial fetch to ensure data is fresh on mount
+    handleRefresh();
+
+    const channel = supabase.channel('wishlist-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'wishlist' },
+        (payload) => {
+            // When ANY change happens to wishlist table, refresh the list
+            // We do a full fetch to ensure RLS rules apply correctly and we see only our store's items
+            handleRefresh();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [storeLocation]);
+
+
   const handleRefresh = async () => {
+    if (!storeLocation) return;
+    
     setRefreshing(true);
-    if (storeLocation) {
-        // Explicitly fetching by store_location, relying on RLS to permit it
-        const { data, error } = await supabase
-            .from('wishlist')
-            .select('*')
-            .eq('store_location', storeLocation)
-            .order('addedDate', { ascending: false }); // Show newest first
-            
-        if (data) setWishlist(data);
-        if (error) console.error("Wishlist refresh error:", error);
-    }
+    // Explicitly fetching by store_location, relying on RLS to permit it
+    const { data, error } = await supabase
+        .from('wishlist')
+        .select('*')
+        .eq('store_location', storeLocation)
+        .order('addedDate', { ascending: false }); // Show newest first
+        
+    if (data) setWishlist(data);
+    if (error) console.error("Wishlist refresh error:", error);
+    
     setRefreshing(false);
   };
 
@@ -38,6 +64,12 @@ const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist, sto
     setLoading(true);
 
     const { data: { user } } = await supabase.auth.getUser();
+
+    if (!storeLocation) {
+        alert("Store location is missing. Please re-login.");
+        setLoading(false);
+        return;
+    }
 
     const payload = {
       name: newItemName,
@@ -53,14 +85,16 @@ const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist, sto
     setWishlist(prev => [tempItem, ...prev]);
 
     const { data, error } = await supabase.from('wishlist').insert([payload]).select().single();
+    
     if(data) {
+        // Replace temp item with real one
         setWishlist(prev => prev.map(item => item.id === tempId ? data : item));
         setNewItemName('');
         setNewItemNote('');
     } else {
         console.error("Add wishlist error:", error);
         setWishlist(prev => prev.filter(item => item.id !== tempId));
-        alert('Error adding item. Please check internet connection.');
+        alert('Error adding item. Permission might be denied if Store Location does not match.');
     }
     setLoading(false);
   };
@@ -95,7 +129,7 @@ const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist, sto
                 </h2>
                 <div className="flex items-center text-xs text-slate-500 mt-1 bg-slate-100 px-2 py-1 rounded-md w-fit">
                     <Store size={12} className="mr-1" />
-                    <span>Shared list for: <strong className="text-slate-700">{storeLocation}</strong></span>
+                    <span>Shared list for: <strong className="text-slate-700">{storeLocation || "Unknown"}</strong></span>
                 </div>
             </div>
 
