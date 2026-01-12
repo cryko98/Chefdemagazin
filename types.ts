@@ -17,6 +17,7 @@ export interface Supplier {
   orderDay: string;
   deliveryDay: string;
   store_location?: string;
+  user_id?: string;
 }
 
 export interface Product {
@@ -27,6 +28,7 @@ export interface Product {
   price: number;
   supplierId: string;
   store_location?: string;
+  user_id?: string;
 }
 
 export interface OrderItem {
@@ -37,6 +39,7 @@ export interface OrderItem {
   supplierId: string;
   isAdHoc: boolean; // True if manually typed, false if from inventory
   store_location?: string;
+  user_id?: string;
 }
 
 export interface WishlistItem {
@@ -45,6 +48,7 @@ export interface WishlistItem {
   addedDate: string;
   notes?: string;
   store_location?: string;
+  user_id?: string; // Track who added it, even if everyone can see it
 }
 
 export interface ScannedItem {
@@ -53,6 +57,7 @@ export interface ScannedItem {
   format: string;
   created_at: string;
   store_location?: string;
+  user_id?: string;
 }
 
 export interface Translation {

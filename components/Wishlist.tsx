@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Heart, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Heart, RefreshCw, Store } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { Language, Translation, WishlistItem } from '../types';
 
@@ -20,8 +20,15 @@ const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist, sto
   const handleRefresh = async () => {
     setRefreshing(true);
     if (storeLocation) {
-        const { data } = await supabase.from('wishlist').select('*').eq('store_location', storeLocation);
+        // Explicitly fetching by store_location, relying on RLS to permit it
+        const { data, error } = await supabase
+            .from('wishlist')
+            .select('*')
+            .eq('store_location', storeLocation)
+            .order('addedDate', { ascending: false }); // Show newest first
+            
         if (data) setWishlist(data);
+        if (error) console.error("Wishlist refresh error:", error);
     }
     setRefreshing(false);
   };
@@ -30,18 +37,20 @@ const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist, sto
     if (!newItemName) return;
     setLoading(true);
 
+    const { data: { user } } = await supabase.auth.getUser();
+
     const payload = {
       name: newItemName,
       addedDate: new Date().toLocaleDateString(),
       notes: newItemNote,
-      user_id: (await supabase.auth.getUser()).data.user?.id,
+      user_id: user?.id,
       store_location: storeLocation
     };
     
     // Optimistic Update
     const tempId = Math.random().toString();
     const tempItem: WishlistItem = { ...payload, id: tempId, addedDate: new Date().toLocaleDateString() };
-    setWishlist(prev => [...prev, tempItem]);
+    setWishlist(prev => [tempItem, ...prev]);
 
     const { data, error } = await supabase.from('wishlist').insert([payload]).select().single();
     if(data) {
@@ -49,32 +58,47 @@ const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist, sto
         setNewItemName('');
         setNewItemNote('');
     } else {
-        console.error(error);
+        console.error("Add wishlist error:", error);
         setWishlist(prev => prev.filter(item => item.id !== tempId));
-        alert('Error adding wishlist item');
+        alert('Error adding item. Please check internet connection.');
     }
     setLoading(false);
   };
 
   const handleRemove = async (id: string) => {
     // Optimistic delete
+    const prevList = [...wishlist];
     setWishlist(prev => prev.filter(w => w.id !== id));
     
     const { error } = await supabase.from('wishlist').delete().eq('id', id);
     if(error) {
         // Revert on error
-        handleRefresh();
+        console.error("Delete wishlist error:", error);
+        setWishlist(prevList);
+        alert("Could not delete item.");
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <div className="flex justify-between items-center mb-4">
-             <h2 className="text-xl font-bold text-slate-800 flex items-center space-x-2">
-                <Heart className="text-rose-500" />
-                <span>{t.addWishlist}</span>
-            </h2>
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative overflow-hidden">
+        {/* Decorative background badge */}
+        <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+            <Heart size={120} />
+        </div>
+
+        <div className="flex justify-between items-start mb-6 relative z-10">
+            <div>
+                 <h2 className="text-xl font-bold text-slate-800 flex items-center space-x-2">
+                    <Heart className="text-rose-500 fill-rose-500" />
+                    <span>{t.addWishlist}</span>
+                </h2>
+                <div className="flex items-center text-xs text-slate-500 mt-1 bg-slate-100 px-2 py-1 rounded-md w-fit">
+                    <Store size={12} className="mr-1" />
+                    <span>Shared list for: <strong className="text-slate-700">{storeLocation}</strong></span>
+                </div>
+            </div>
+
             <button 
                 onClick={handleRefresh} 
                 className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
@@ -84,7 +108,7 @@ const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist, sto
             </button>
         </div>
        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-end relative z-10">
             <div className="md:col-span-1">
                 <label className="block text-sm font-medium text-slate-700 mb-1">{t.name}</label>
                 <input 
@@ -109,7 +133,7 @@ const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist, sto
                 <button 
                     onClick={handleAdd}
                     disabled={!newItemName || loading}
-                    className="w-full bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2 disabled:opacity-50"
+                    className="w-full bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2 disabled:opacity-50 shadow-sm shadow-rose-200"
                 >
                     <Plus size={18} />
                     <span>{loading ? "..." : t.add}</span>
@@ -120,23 +144,32 @@ const Wishlist: React.FC<WishlistProps> = ({ t, lang, wishlist, setWishlist, sto
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {wishlist.map(item => (
-            <div key={item.id} className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex justify-between items-start animate-in fade-in slide-in-from-bottom-2">
+            <div key={item.id} className="bg-white p-5 rounded-xl shadow-sm border border-slate-100 flex justify-between items-start animate-in fade-in slide-in-from-bottom-2 group hover:shadow-md transition-all">
                 <div>
-                    <h3 className="font-bold text-slate-800">{item.name}</h3>
-                    {item.notes && <p className="text-sm text-slate-600 mt-1">{item.notes}</p>}
-                    <p className="text-xs text-slate-400 mt-2">Added: {item.addedDate}</p>
+                    <h3 className="font-bold text-slate-800 text-lg">{item.name}</h3>
+                    {item.notes && (
+                        <div className="bg-amber-50 text-amber-800 text-xs px-2 py-1 rounded mt-2 inline-block border border-amber-100">
+                            {item.notes}
+                        </div>
+                    )}
+                    <p className="text-[10px] text-slate-400 mt-3 flex items-center">
+                        <span>{item.addedDate}</span>
+                    </p>
                 </div>
                 <button 
                     onClick={() => handleRemove(item.id)}
-                    className="text-slate-300 hover:text-rose-500 transition-colors"
+                    className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors"
+                    title={t.delete}
                 >
                     <Trash2 size={18} />
                 </button>
             </div>
         ))}
         {wishlist.length === 0 && (
-            <div className="col-span-full py-12 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
-                {t.noData}
+            <div className="col-span-full py-16 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                <Heart size={48} className="mx-auto text-slate-300 mb-3" />
+                <p>{t.noData}</p>
+                <p className="text-xs text-slate-400 mt-1">Items added here will be visible to all staff in {storeLocation}.</p>
             </div>
         )}
       </div>
