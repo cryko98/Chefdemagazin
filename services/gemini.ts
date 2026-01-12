@@ -1,7 +1,34 @@
 import { GoogleGenAI } from "@google/genai";
 import { Language, Supplier, OrderItem, Unit } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper to safely get API key without crashing in browser
+const getApiKey = () => {
+    try {
+        // Try process.env first (Node.js / Polyfills)
+        if (typeof process !== 'undefined' && process.env?.API_KEY) {
+            return process.env.API_KEY;
+        }
+        // Try import.meta.env (Vite standard)
+        if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+             const env = (import.meta as any).env;
+             return env.VITE_GEMINI_API_KEY || env.VITE_API_KEY || env.API_KEY || '';
+        }
+    } catch (e) {
+        console.warn("Could not access environment variables", e);
+    }
+    return '';
+};
+
+// Lazy initialization of AI client
+// This prevents the app from crashing on load if keys are missing or process is undefined
+let aiInstance: GoogleGenAI | null = null;
+
+const getAi = () => {
+    if (!aiInstance) {
+        aiInstance = new GoogleGenAI({ apiKey: getApiKey() });
+    }
+    return aiInstance;
+};
 
 const getUnitLabel = (unit: Unit, lang: Language): string => {
     if (lang === 'RO') {
@@ -37,14 +64,14 @@ export const generateOrderEmail = async (supplier: Supplier, items: OrderItem[],
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await getAi().models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
     return response.text || "Error generating email.";
   } catch (error) {
     console.error("Gemini API Error:", error);
-    return "Error connecting to AI service.";
+    return "Error connecting to AI service. Please check API Key.";
   }
 };
 
@@ -59,7 +86,7 @@ export const askBusinessAdvisor = async (question: string, language: Language): 
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await getAi().models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
