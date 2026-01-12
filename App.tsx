@@ -65,16 +65,11 @@ const App: React.FC = () => {
       if (!session || !userStore) return;
 
       // Subscribe to ANY change in the relevant tables (Insert, Update, Delete)
-      // We do not filter by store_location in the subscription itself to avoid RLS filtering issues on the event.
-      // Instead, we listen to everything and then re-fetch the filtered data.
       const channel = supabase.channel('global-store-updates')
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'wishlist' },
-          (payload) => {
-               // Reload wishlist
-               fetchWishlist(userStore);
-          }
+          () => fetchWishlist(userStore)
         )
         .on(
           'postgres_changes',
@@ -85,6 +80,12 @@ const App: React.FC = () => {
             'postgres_changes',
             { event: '*', schema: 'public', table: 'products' },
             () => fetchData(userStore)
+        )
+        // Also listen for Scanned Items here as a backup trigger
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'scanned_items' },
+            () => {} // Scanner component has its own specific listener, but we could globalize it
         )
         .subscribe();
 
@@ -158,7 +159,7 @@ const App: React.FC = () => {
 
       switch(activeTab) {
           case 'dashboard': return <Dashboard t={t} lang={language} suppliers={suppliers} products={products} orders={orders} wishlist={wishlist} />;
-          case 'scanner': return <Scanner t={t} lang={language} />;
+          case 'scanner': return <Scanner t={t} lang={language} storeLocation={userStore} />;
           case 'suppliers': return <Suppliers t={t} lang={language} suppliers={suppliers} setSuppliers={setSuppliers} storeLocation={userStore} />;
           case 'inventory': return <Inventory t={t} lang={language} products={products} setProducts={setProducts} suppliers={suppliers} setOrders={setOrders} storeLocation={userStore} />;
           case 'orders': return <Orders t={t} lang={language} suppliers={suppliers} orders={orders} setOrders={setOrders} storeLocation={userStore} />;
