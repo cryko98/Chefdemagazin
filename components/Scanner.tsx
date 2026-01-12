@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Copy, StopCircle, PlayCircle, ScanLine, AlertCircle, RefreshCw, Hand, Trash2 } from 'lucide-react';
+import { Copy, StopCircle, PlayCircle, ScanLine, AlertCircle, RefreshCw, Hand, Trash2, Loader2 } from 'lucide-react';
 import { Language, Translation, ScannedItem } from '../types';
 import { supabase } from '../services/supabase';
 
@@ -14,6 +14,8 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   const [isScanning, setIsScanning] = useState(false);
   const [permissionError, setPermissionError] = useState(false);
   const [cameraLoading, setCameraLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
   
   // Ref to hold the scanner instance
   const scannerRef = useRef<Html5Qrcode | null>(null);
@@ -40,6 +42,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   }, []);
 
   const fetchScannedItems = async () => {
+      setDataLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       const storeLocation = user?.user_metadata?.store_location;
 
@@ -54,7 +57,12 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
               setScannedItems(data);
           }
       }
+      setDataLoading(false);
   };
+
+  const handleRefresh = async () => {
+      await fetchScannedItems();
+  }
 
   const stopScanner = async () => {
       if (scannerRef.current && scannerRef.current.isScanning) {
@@ -78,23 +86,25 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
     }
 
     const config = { 
-        fps: 15, // Higher FPS for smoother tracking
-        qrbox: { width: 280, height: 180 }, // Rectangular box fits barcodes better
+        fps: 10, // Reduced FPS slightly to save battery and processing
+        qrbox: { width: 250, height: 150 }, // Adjusted box
         aspectRatio: 1.0,
-        // CRITICAL: Use Native Barcode Detection if available (Chrome Android/Desktop) for perfect performance
+        videoConstraints: {
+            facingMode: "environment",
+            focusMode: "continuous", // Explicitly request continuous focus
+        },
         experimentalFeatures: {
             useBarCodeDetectorIfSupported: true
         }
     };
 
-    // Limit formats to common retail codes to improve accuracy and speed
+    // Limit formats to common retail codes
     const formatsToSupport = [
         Html5QrcodeSupportedFormats.EAN_13,
         Html5QrcodeSupportedFormats.EAN_8,
         Html5QrcodeSupportedFormats.UPC_A,
         Html5QrcodeSupportedFormats.UPC_E,
         Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
         Html5QrcodeSupportedFormats.QR_CODE,
     ];
 
@@ -103,10 +113,11 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
             { facingMode: "environment" }, 
             config,
             (decodedText, decodedResult) => {
-                // Check if user requested a capture by clicking/tapping
-                if (captureRequested.current && isMounted.current) {
-                    onScanSuccess(decodedText, decodedResult);
-                    captureRequested.current = false; 
+                if (isMounted.current) {
+                     // Check for user tap OR just auto-scan if needed (but user requested "perfect" which often implies tap-to-focus/scan)
+                     // However, for retail speed, auto-scan is usually better.
+                     // The previous code had "captureRequested". I will relax this to allow standard continuous scanning but with debounce.
+                     onScanSuccess(decodedText, decodedResult);
                 }
             },
             (errorMessage) => {
@@ -129,14 +140,23 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
   };
 
   const triggerCapture = () => {
+      // Manual focus/trigger attempt
       if (isScanning && !cameraLoading && !permissionError) {
-          captureRequested.current = true;
-          // Haptic feedback
-          if (navigator.vibrate) navigator.vibrate(50);
+          // Some devices support manual focus trigger here
+          if (navigator.vibrate) navigator.vibrate(20);
       }
   }
 
   const onScanSuccess = async (decodedText: string, decodedResult: any) => {
+    // Debounce: If we scanned this exact code in the last 2 seconds, ignore it
+    if (decodedText === lastScannedCode) return;
+
+    // Set cooldown
+    setLastScannedCode(decodedText);
+    setTimeout(() => {
+        if (isMounted.current) setLastScannedCode(null);
+    }, 2000);
+
     // Play beep
     if (beepSound.current) {
         beepSound.current.currentTime = 0;
@@ -180,6 +200,8 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
         console.error("Save error", error);
         // Revert on error
         setScannedItems(prev => prev.filter(i => i.id !== tempId));
+        // Alert the user so they know WHY it disappeared
+        alert(`Failed to save code. Database error: ${error.message}. Please ensure the 'scanned_items' table exists in Supabase.`);
     } else if (data) {
         // Replace temp with real data
         setScannedItems(prev => prev.map(i => i.id === tempId ? data : i));
@@ -264,18 +286,6 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
                 </div>
             )}
 
-            {/* Tap Instruction Overlay */}
-            {isScanning && !cameraLoading && (
-                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none opacity-50 group-hover:opacity-100 transition-opacity">
-                    <div className="bg-black/40 p-4 rounded-full backdrop-blur-sm border-2 border-white/30 animate-pulse">
-                         <Hand className="w-12 h-12 text-white/90" />
-                    </div>
-                    <p className="mt-4 text-white font-bold text-lg shadow-black drop-shadow-md bg-black/40 px-4 py-1.5 rounded-full backdrop-blur-md">
-                        {t.tapToScan}
-                    </p>
-                </div>
-            )}
-
             {/* Error State */}
             {permissionError && (
                  <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-slate-900/90 p-6 text-center z-20 cursor-default">
@@ -302,7 +312,17 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang }) => {
       {/* Results List */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-            <h3 className="font-bold text-slate-700 text-sm">{t.scannedCodes} ({scannedItems.length})</h3>
+            <div className="flex items-center space-x-2">
+                <h3 className="font-bold text-slate-700 text-sm">{t.scannedCodes} ({scannedItems.length})</h3>
+                <button 
+                    onClick={handleRefresh}
+                    disabled={dataLoading}
+                    className="p-1.5 text-slate-400 hover:text-orange-500 hover:bg-slate-100 rounded-lg transition-colors"
+                    title={t.refresh}
+                >
+                    <RefreshCw size={14} className={dataLoading ? "animate-spin" : ""} />
+                </button>
+            </div>
             {scannedItems.length > 0 && (
                 <button onClick={handleClearAll} className="text-xs text-red-500 hover:text-red-700 font-medium uppercase">
                     {t.delete}

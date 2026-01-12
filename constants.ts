@@ -31,6 +31,7 @@ export const TRANSLATIONS: Record<Language, Translation> = {
     edit: "Editează",
     addToOrder: "Adaugă la Comandă",
     generateOrder: "Generează Email Comandă",
+    refresh: "Reîmprospătează",
 
     name: "Nume",
     contact: "Contact (Email/Tel)",
@@ -107,6 +108,7 @@ export const TRANSLATIONS: Record<Language, Translation> = {
     edit: "Szerkesztés",
     addToOrder: "Hozzáadás a Rendeléshez",
     generateOrder: "Rendelési Email Generálása",
+    refresh: "Frissítés",
 
     name: "Név",
     contact: "Kapcsolat (Email/Tel)",

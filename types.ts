@@ -79,6 +79,7 @@ export interface Translation {
   edit: string;
   addToOrder: string;
   generateOrder: string;
+  refresh: string;
   
   // Form Labels
   name: string;
