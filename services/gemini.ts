@@ -1,10 +1,17 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { Language, Supplier, OrderItem, Unit } from '../types';
 
-// Initialize the Gemini API client according to the latest SDK guidelines.
-// The API key is sourced directly from the environment.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Safely access process.env to avoid crashing in environments where process is not defined.
+const getApiKey = (): string => {
+    try {
+        const proc = (window as any).process || (typeof process !== 'undefined' ? process : null);
+        return proc?.env?.API_KEY || '';
+    } catch (e) {
+        return '';
+    }
+}
+
+const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 const getUnitLabel = (unit: Unit, lang: Language): string => {
     if (lang === 'RO') {
@@ -24,9 +31,6 @@ const getUnitLabel = (unit: Unit, lang: Language): string => {
     }
 };
 
-/**
- * Generates a formal order email using Gemini.
- */
 export const generateOrderEmail = async (supplier: Supplier, items: OrderItem[], language: Language): Promise<string> => {
   const langName = language === 'RO' ? 'Romanian' : 'Hungarian';
   const itemsList = items.map(item => `- ${item.name} (${item.quantity} ${getUnitLabel(item.unit, language)})`).join('\n');
@@ -43,12 +47,10 @@ export const generateOrderEmail = async (supplier: Supplier, items: OrderItem[],
   `;
 
   try {
-    // Using gemini-3-flash-preview for simple text generation tasks.
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
-    // Directly access the .text property of GenerateContentResponse.
     return response.text || "Error generating email.";
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -56,9 +58,6 @@ export const generateOrderEmail = async (supplier: Supplier, items: OrderItem[],
   }
 };
 
-/**
- * Asks the AI business advisor for retail advice.
- */
 export const askBusinessAdvisor = async (question: string, language: Language): Promise<string> => {
   const langName = language === 'RO' ? 'Romanian' : 'Hungarian';
   const prompt = `
@@ -70,12 +69,10 @@ export const askBusinessAdvisor = async (question: string, language: Language): 
   `;
 
   try {
-    // Using gemini-3-flash-preview for text Q&A tasks.
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
-    // Directly access the .text property of GenerateContentResponse.
     return response.text || "Error generating advice.";
   } catch (error) {
     console.error("Gemini API Error:", error);

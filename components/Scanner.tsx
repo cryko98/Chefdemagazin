@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Copy, StopCircle, PlayCircle, ScanLine, AlertCircle, RefreshCw, Trash2, Store, Zap, ZapOff, Focus, Camera } from 'lucide-react';
@@ -28,8 +27,12 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
 
   useEffect(() => {
     isMounted.current = true;
-    beepSound.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-    beepSound.current.volume = 0.4;
+    try {
+        beepSound.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+        beepSound.current.volume = 0.4;
+    } catch (e) {
+        console.warn("Audio not supported");
+    }
 
     if (storeLocation) handleRefresh();
 
@@ -46,7 +49,6 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
     };
   }, [storeLocation]);
 
-  // Renamed from fetchScannedItems to handleRefresh to resolve reference error and added loading state
   const handleRefresh = async () => {
       if (!storeLocation) return;
       setDataLoading(true);
@@ -100,39 +102,41 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
     setCameraLoading(true);
 
     try {
-        // 1. Megállítjuk a régit ha van
+        if (!Html5Qrcode) {
+            throw new Error("Biblioteca de scanare nu a putut fi încărcată.");
+        }
+
         if (scannerRef.current) {
             await stopScanner();
         }
         
-        // 2. Új példány
         scannerRef.current = new Html5Qrcode("reader");
 
-        // 3. Lekérjük a kamerákat az engedély ellenőrzéséhez és választáshoz
         const cameras = await Html5Qrcode.getCameras();
         if (!cameras || cameras.length === 0) {
             throw new Error("Nu s-a găsit nicio cameră.");
         }
 
-        // 4. Konfiguráció
+        // Defensive check for formats
+        const formats = Html5QrcodeSupportedFormats ? [ 
+            Html5QrcodeSupportedFormats.EAN_13, 
+            Html5QrcodeSupportedFormats.EAN_8, 
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.QR_CODE
+        ] : undefined;
+
         const config = { 
-            fps: 30, 
+            fps: 25, 
             qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
                 const width = Math.min(viewfinderWidth * 0.85, 300);
                 const height = Math.min(viewfinderHeight * 0.4, 180);
                 return { width, height };
             },
             aspectRatio: 1.0,
-            formatsToSupport: [ 
-                Html5QrcodeSupportedFormats.EAN_13, 
-                Html5QrcodeSupportedFormats.EAN_8, 
-                Html5QrcodeSupportedFormats.CODE_128,
-                Html5QrcodeSupportedFormats.UPC_A,
-                Html5QrcodeSupportedFormats.QR_CODE
-            ]
+            formatsToSupport: formats
         };
 
-        // 5. Indítás a hátlapi kamerával
         await scannerRef.current.start(
             { facingMode: "environment" }, 
             {
@@ -153,10 +157,11 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
             setIsScanning(true);
             setCameraLoading(false);
             
-            // Torch check
-            const track = scannerRef.current.getRunningTrack();
-            const capabilities = track.getCapabilities() as any;
-            if (capabilities.torch) setHasTorch(true);
+            try {
+                const track = scannerRef.current.getRunningTrack();
+                const capabilities = track.getCapabilities() as any;
+                if (capabilities.torch) setHasTorch(true);
+            } catch (e) {}
         }
     } catch (err: any) {
         console.error("Scanner Error:", err);
