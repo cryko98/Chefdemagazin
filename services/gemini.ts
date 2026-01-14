@@ -1,34 +1,10 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { Language, Supplier, OrderItem, Unit } from '../types';
 
-// Helper to safely get API key without crashing in browser
-const getApiKey = () => {
-    try {
-        // Try process.env first (Node.js / Polyfills)
-        if (typeof process !== 'undefined' && process.env?.API_KEY) {
-            return process.env.API_KEY;
-        }
-        // Try import.meta.env (Vite standard)
-        if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
-             const env = (import.meta as any).env;
-             return env.VITE_GEMINI_API_KEY || env.VITE_API_KEY || env.API_KEY || '';
-        }
-    } catch (e) {
-        console.warn("Could not access environment variables", e);
-    }
-    return '';
-};
-
-// Lazy initialization of AI client
-// This prevents the app from crashing on load if keys are missing or process is undefined
-let aiInstance: GoogleGenAI | null = null;
-
-const getAi = () => {
-    if (!aiInstance) {
-        aiInstance = new GoogleGenAI({ apiKey: getApiKey() });
-    }
-    return aiInstance;
-};
+// Initialize the Gemini API client according to the latest SDK guidelines.
+// The API key is sourced directly from the environment.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const getUnitLabel = (unit: Unit, lang: Language): string => {
     if (lang === 'RO') {
@@ -48,6 +24,9 @@ const getUnitLabel = (unit: Unit, lang: Language): string => {
     }
 };
 
+/**
+ * Generates a formal order email using Gemini.
+ */
 export const generateOrderEmail = async (supplier: Supplier, items: OrderItem[], language: Language): Promise<string> => {
   const langName = language === 'RO' ? 'Romanian' : 'Hungarian';
   const itemsList = items.map(item => `- ${item.name} (${item.quantity} ${getUnitLabel(item.unit, language)})`).join('\n');
@@ -64,10 +43,12 @@ export const generateOrderEmail = async (supplier: Supplier, items: OrderItem[],
   `;
 
   try {
-    const response = await getAi().models.generateContent({
+    // Using gemini-3-flash-preview for simple text generation tasks.
+    const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
+    // Directly access the .text property of GenerateContentResponse.
     return response.text || "Error generating email.";
   } catch (error) {
     console.error("Gemini API Error:", error);
@@ -75,6 +56,9 @@ export const generateOrderEmail = async (supplier: Supplier, items: OrderItem[],
   }
 };
 
+/**
+ * Asks the AI business advisor for retail advice.
+ */
 export const askBusinessAdvisor = async (question: string, language: Language): Promise<string> => {
   const langName = language === 'RO' ? 'Romanian' : 'Hungarian';
   const prompt = `
@@ -86,10 +70,12 @@ export const askBusinessAdvisor = async (question: string, language: Language): 
   `;
 
   try {
-    const response = await getAi().models.generateContent({
+    // Using gemini-3-flash-preview for text Q&A tasks.
+    const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
+    // Directly access the .text property of GenerateContentResponse.
     return response.text || "Error generating advice.";
   } catch (error) {
     console.error("Gemini API Error:", error);

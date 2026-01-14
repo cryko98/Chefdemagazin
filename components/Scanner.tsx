@@ -1,6 +1,7 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import { Copy, StopCircle, PlayCircle, ScanLine, AlertCircle, RefreshCw, Trash2, Store, Zap, ZapOff, Focus } from 'lucide-react';
+import { Copy, StopCircle, PlayCircle, ScanLine, AlertCircle, RefreshCw, Trash2, Store, Zap, ZapOff, Focus, Camera } from 'lucide-react';
 import { Language, Translation, ScannedItem } from '../types';
 import { supabase } from '../services/supabase';
 
@@ -13,7 +14,7 @@ interface ScannerProps {
 const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [isScanning, setIsScanning] = useState(false);
-  const [permissionError, setPermissionError] = useState(false);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const [cameraLoading, setCameraLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
@@ -30,11 +31,11 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
     beepSound.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
     beepSound.current.volume = 0.4;
 
-    if (storeLocation) fetchScannedItems();
+    if (storeLocation) handleRefresh();
 
     const channel = supabase.channel('scanned-items-sync')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'scanned_items' }, () => { 
-            if(storeLocation) fetchScannedItems(); 
+            if(storeLocation) handleRefresh(); 
         })
         .subscribe();
     
@@ -45,8 +46,10 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
     };
   }, [storeLocation]);
 
-  const fetchScannedItems = async () => {
+  // Renamed from fetchScannedItems to handleRefresh to resolve reference error and added loading state
+  const handleRefresh = async () => {
       if (!storeLocation) return;
+      setDataLoading(true);
       try {
         const { data, error } = await supabase
             .from('scanned_items')
@@ -54,21 +57,19 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
             .eq('store_location', storeLocation)
             .order('created_at', { ascending: false });
         if (data && !error && isMounted.current) setScannedItems(data);
-      } catch (err) { console.error("Fetch error:", err); }
+      } catch (err) { 
+          console.error("Fetch error:", err); 
+      } finally {
+          if (isMounted.current) setDataLoading(false);
+      }
   };
-
-  const handleRefresh = async () => {
-      setDataLoading(true);
-      await fetchScannedItems();
-      setDataLoading(false);
-  }
 
   const toggleTorch = async () => {
       if (!scannerRef.current || !hasTorch) return;
       try {
           const newState = !torchOn;
           await scannerRef.current.applyVideoConstraints({
-              // @ts-ignore - Torch is part of advanced constraints
+              // @ts-ignore
               advanced: [{ torch: newState }]
           });
           setTorchOn(newState);
@@ -78,11 +79,16 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
   };
 
   const stopScanner = async () => {
-      if (scannerRef.current && scannerRef.current.isScanning) {
-          try { 
-              if (torchOn) await toggleTorch();
-              await scannerRef.current.stop(); 
-          } catch (e) { console.warn(e); }
+      if (scannerRef.current) {
+          try {
+              if (scannerRef.current.isScanning) {
+                if (torchOn) await toggleTorch();
+                await scannerRef.current.stop();
+              }
+              await scannerRef.current.clear();
+          } catch (e) {
+              console.warn("Stop error", e);
+          }
       }
       setIsScanning(false);
       setHasTorch(false);
@@ -90,43 +96,51 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
   };
 
   const startScanning = async () => {
-    setPermissionError(false);
+    setPermissionError(null);
     setCameraLoading(true);
 
-    if (scannerRef.current) {
-        try { await scannerRef.current.clear(); } catch(e) {}
-    }
-    scannerRef.current = new Html5Qrcode("reader");
-
-    const config = { 
-        fps: 25, 
-        qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-            const width = Math.min(viewfinderWidth * 0.85, 300);
-            const height = Math.min(viewfinderHeight * 0.35, 150);
-            return { width, height };
-        },
-        aspectRatio: 1.0,
-        formatsToSupport: [ 
-            Html5QrcodeSupportedFormats.EAN_13, 
-            Html5QrcodeSupportedFormats.EAN_8, 
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.QR_CODE
-        ]
-    };
-
     try {
+        // 1. Megállítjuk a régit ha van
+        if (scannerRef.current) {
+            await stopScanner();
+        }
+        
+        // 2. Új példány
+        scannerRef.current = new Html5Qrcode("reader");
+
+        // 3. Lekérjük a kamerákat az engedély ellenőrzéséhez és választáshoz
+        const cameras = await Html5Qrcode.getCameras();
+        if (!cameras || cameras.length === 0) {
+            throw new Error("Nu s-a găsit nicio cameră.");
+        }
+
+        // 4. Konfiguráció
+        const config = { 
+            fps: 30, 
+            qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+                const width = Math.min(viewfinderWidth * 0.85, 300);
+                const height = Math.min(viewfinderHeight * 0.4, 180);
+                return { width, height };
+            },
+            aspectRatio: 1.0,
+            formatsToSupport: [ 
+                Html5QrcodeSupportedFormats.EAN_13, 
+                Html5QrcodeSupportedFormats.EAN_8, 
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.QR_CODE
+            ]
+        };
+
+        // 5. Indítás a hátlapi kamerával
         await scannerRef.current.start(
             { facingMode: "environment" }, 
             {
                 ...config,
                 videoConstraints: {
                     facingMode: "environment",
-                    // Profi kamera beállítások a fókuszhoz
                     // @ts-ignore
                     focusMode: "continuous",
-                    // @ts-ignore
-                    whiteBalanceMode: "continuous",
                     width: { min: 640, ideal: 1280 },
                     height: { min: 480, ideal: 720 },
                 }
@@ -139,17 +153,17 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
             setIsScanning(true);
             setCameraLoading(false);
             
-            // Ellenőrizzük, van-e vaku
+            // Torch check
             const track = scannerRef.current.getRunningTrack();
             const capabilities = track.getCapabilities() as any;
             if (capabilities.torch) setHasTorch(true);
         }
-    } catch (err) {
-        console.error("Scanner error:", err);
+    } catch (err: any) {
+        console.error("Scanner Error:", err);
         if (isMounted.current) {
             setIsScanning(false);
             setCameraLoading(false);
-            setPermissionError(true);
+            setPermissionError(err.message || "Eroare la accesarea camerei.");
         }
     }
   };
@@ -163,7 +177,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
     setTimeout(() => {
         scanThrottleRef.current = false;
         setLastScannedCode(null);
-    }, 3000);
+    }, 2500);
 
     if (beepSound.current) {
         beepSound.current.currentTime = 0;
@@ -198,10 +212,10 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-        <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold text-slate-800 flex items-center space-x-2">
-                <ScanLine className="text-orange-500" size={20} />
+      <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-slate-200">
+        <div className="flex justify-between items-center mb-3">
+            <h2 className="text-base font-bold text-slate-800 flex items-center space-x-2">
+                <ScanLine className="text-orange-500" size={18} />
                 <span>{t.scanner}</span>
             </h2>
             <div className="flex space-x-2">
@@ -211,19 +225,19 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
                         <span>{t.stopScan}</span>
                     </button>
                 ) : (
-                    <button onClick={startScanning} disabled={!storeLocation} className="flex items-center space-x-1 px-3 py-1.5 bg-lime-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
-                        <PlayCircle size={14} />
+                    <button onClick={startScanning} disabled={!storeLocation || cameraLoading} className="flex items-center space-x-1 px-3 py-1.5 bg-lime-600 text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                        {cameraLoading ? <RefreshCw size={14} className="animate-spin" /> : <Camera size={14} />}
                         <span>{t.startScan}</span>
                     </button>
                 )}
             </div>
         </div>
 
-        <div className="relative bg-slate-950 rounded-xl overflow-hidden min-h-[300px] flex items-center justify-center aspect-square md:aspect-video shadow-2xl border-2 border-slate-800">
+        <div className="relative bg-slate-950 rounded-xl overflow-hidden min-h-[250px] flex items-center justify-center aspect-square md:aspect-video shadow-xl border-2 border-slate-900">
             {cameraLoading && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10 bg-slate-900/80 backdrop-blur-sm">
-                    <RefreshCw className="w-8 h-8 animate-spin mb-2 text-lime-500" />
-                    <p className="text-xs font-medium tracking-wide">Inițializare cameră...</p>
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-20 bg-slate-900/90 backdrop-blur-sm">
+                    <RefreshCw className="w-8 h-8 animate-spin mb-3 text-lime-500" />
+                    <p className="text-xs font-bold uppercase tracking-widest text-lime-100">Se inițializează...</p>
                 </div>
             )}
             
@@ -231,38 +245,35 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
             
             {isScanning && (
                  <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-                    {/* Vizuális fókuszkeret */}
-                    <div className="w-[80%] h-[30%] border-2 border-orange-500/80 rounded-lg relative shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
+                    <div className="w-[85%] h-[40%] border-2 border-orange-500/80 rounded-lg relative shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
                         <div className="absolute -top-1 -left-1 w-6 h-6 border-l-4 border-t-4 border-orange-500 rounded-tl"></div>
                         <div className="absolute -top-1 -right-1 w-6 h-6 border-r-4 border-t-4 border-orange-500 rounded-tr"></div>
                         <div className="absolute -bottom-1 -left-1 w-6 h-6 border-l-4 border-b-4 border-orange-500 rounded-bl"></div>
                         <div className="absolute -bottom-1 -right-1 w-6 h-6 border-r-4 border-b-4 border-orange-500 rounded-br"></div>
                         
-                        {/* Animált lézer csík */}
                         <div className="absolute top-0 left-0 right-0 h-0.5 bg-orange-400 shadow-[0_0_15px_rgba(251,146,60,0.8)] animate-[scan_2s_linear_infinite]"></div>
                     </div>
 
-                    <div className="mt-8 flex flex-col items-center">
-                        <div className="flex items-center space-x-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10">
-                            <Focus size={14} className="text-lime-400 animate-pulse" />
-                            <span className="text-white text-[10px] font-bold uppercase tracking-widest">Auto-Focus Active</span>
+                    <div className="mt-6">
+                        <div className="flex items-center space-x-2 bg-black/50 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
+                            <Focus size={12} className="text-lime-400 animate-pulse" />
+                            <span className="text-white text-[9px] font-black uppercase tracking-widest">Focus Actv</span>
                         </div>
                     </div>
 
-                    {/* Zseblámpa Gomb */}
                     {hasTorch && (
                         <button 
                             onClick={(e) => { e.stopPropagation(); toggleTorch(); }} 
-                            className={`pointer-events-auto absolute bottom-6 right-6 w-12 h-12 rounded-full flex items-center justify-center shadow-lg border-2 transition-all ${
+                            className={`pointer-events-auto absolute bottom-4 right-4 w-10 h-10 rounded-full flex items-center justify-center shadow-lg border-2 transition-all ${
                                 torchOn ? 'bg-orange-500 border-white text-white' : 'bg-black/50 border-white/20 text-white/70'
                             }`}
                         >
-                            {torchOn ? <Zap size={20} fill="currentColor" /> : <ZapOff size={20} />}
+                            {torchOn ? <Zap size={18} fill="currentColor" /> : <ZapOff size={18} />}
                         </button>
                     )}
                     
                     {lastScannedCode && (
-                        <div className="absolute top-10 px-6 py-2 bg-lime-500 text-white rounded-full text-xs font-black shadow-xl animate-bounce border-2 border-white">
+                        <div className="absolute top-8 px-5 py-2 bg-lime-500 text-white rounded-full text-xs font-black shadow-2xl animate-bounce border-2 border-white">
                            {lastScannedCode}
                         </div>
                     )}
@@ -270,30 +281,31 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
             )}
 
             {permissionError && (
-                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-8 text-center bg-slate-900">
-                    <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
-                    <p className="text-sm font-bold mb-4">{t.cameraError}</p>
-                    <button onClick={startScanning} className="px-6 py-2 bg-orange-500 text-white rounded-xl font-bold text-sm shadow-lg">Reîncearcă</button>
+                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-6 text-center bg-slate-900 z-30">
+                    <AlertCircle className="w-10 h-10 text-red-500 mb-3" />
+                    <p className="text-xs font-bold mb-1">Eroare Cameră</p>
+                    <p className="text-[10px] text-slate-400 mb-4">{permissionError}</p>
+                    <button onClick={startScanning} className="px-5 py-2 bg-orange-500 text-white rounded-xl font-bold text-xs shadow-lg">Reîncearcă</button>
                  </div>
             )}
         </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-3 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-            <h3 className="font-bold text-slate-700 text-[10px] uppercase tracking-widest">{t.scannedCodes} ({scannedItems.length})</h3>
-            <button onClick={handleRefresh} disabled={dataLoading} className="p-1 text-slate-400 hover:text-orange-500">
-                <RefreshCw size={14} className={dataLoading ? "animate-spin" : ""} />
+        <div className="p-2.5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+            <h3 className="font-black text-slate-700 text-[9px] uppercase tracking-widest">{t.scannedCodes} ({scannedItems.length})</h3>
+            <button onClick={handleRefresh} disabled={dataLoading} className="p-1 text-slate-400">
+                <RefreshCw size={12} className={dataLoading ? "animate-spin" : ""} />
             </button>
         </div>
-        <ul className="divide-y divide-slate-100 max-h-[250px] overflow-y-auto">
+        <ul className="divide-y divide-slate-100 max-h-[200px] overflow-y-auto">
             {scannedItems.map((item) => (
-                <li key={item.id} className="p-3 flex justify-between items-center hover:bg-slate-50 transition-colors">
+                <li key={item.id} className="p-2.5 flex justify-between items-center hover:bg-slate-50 transition-colors">
                     <div className="min-w-0">
-                        <p className="font-mono text-sm font-bold text-slate-800 truncate">{item.code}</p>
-                        <p className="text-[9px] text-slate-400 font-medium uppercase">{item.format} • {new Date(item.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                        <p className="font-mono text-sm font-black text-slate-800 truncate">{item.code}</p>
+                        <p className="text-[8px] text-slate-400 font-bold uppercase">{item.format} • {new Date(item.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
                     </div>
-                    <div className="flex items-center space-x-1">
+                    <div className="flex items-center space-x-1 shrink-0">
                         <button onClick={() => {
                             navigator.clipboard.writeText(item.code);
                             if (navigator.vibrate) navigator.vibrate(20);
@@ -303,7 +315,7 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
                 </li>
             ))}
             {scannedItems.length === 0 && (
-                <li className="p-8 text-center text-slate-300 text-xs italic">{t.noData}</li>
+                <li className="p-6 text-center text-slate-300 text-[10px] italic font-medium">Niciun cod scanat</li>
             )}
         </ul>
       </div>
@@ -311,8 +323,8 @@ const Scanner: React.FC<ScannerProps> = ({ t, lang, storeLocation }) => {
       <style>{`
         @keyframes scan {
             0% { top: 0%; opacity: 0; }
-            10% { opacity: 1; }
-            90% { opacity: 1; }
+            15% { opacity: 1; }
+            85% { opacity: 1; }
             100% { top: 100%; opacity: 0; }
         }
       `}</style>

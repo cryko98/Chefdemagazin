@@ -144,19 +144,19 @@ const App: React.FC = () => {
       </aside>
 
       {/* Mobile Top Header */}
-      <header className="lg:hidden bg-lime-600 text-white p-3 sticky top-0 z-30 shadow-md flex justify-between items-center h-14">
+      <header className="lg:hidden bg-lime-600 text-white p-3 sticky top-0 z-40 shadow-md flex justify-between items-center h-12">
           <div className="flex items-center space-x-2">
-               <Store className="w-5 h-5 text-orange-400" />
-               <span className="font-black text-sm uppercase tracking-tight">LaDoiPasi <span className="font-normal opacity-70 ml-1">| {userStore}</span></span>
+               <Store className="w-4 h-4 text-orange-400" />
+               <span className="font-black text-[11px] uppercase tracking-tight">LaDoiPasi <span className="font-normal opacity-60 ml-0.5">| {userStore}</span></span>
           </div>
           <div className="flex items-center space-x-2">
                <LanguageToggle current={language} onToggle={setLanguage} mobile />
-               <button onClick={handleLogout} className="p-1.5 bg-lime-700/50 rounded-lg"><LogOut size={16} /></button>
+               <button onClick={handleLogout} className="p-1.5 bg-lime-700/50 rounded-md"><LogOut size={14} /></button>
           </div>
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 lg:ml-64 p-3 md:p-6 lg:p-10 pb-24 lg:pb-10 overflow-x-hidden">
+      <main className="flex-1 lg:ml-64 p-3 md:p-6 lg:p-10 pb-20 lg:pb-10 overflow-x-hidden">
         <header className="hidden lg:flex justify-between items-center mb-8">
           <div>
             <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">{t[activeTab]}</h1>
@@ -171,27 +171,26 @@ const App: React.FC = () => {
       </main>
 
       {/* MOBILE SCROLLABLE NAVIGATION BAR */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 z-50 shadow-[0_-10px_30px_rgba(0,0,0,0.08)] safe-area-pb">
-          <div className="flex items-center overflow-x-auto scrollbar-hide snap-x px-2 h-16 bg-white no-scrollbar">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 z-50 shadow-[0_-10px_30px_rgba(0,0,0,0.1)] safe-area-pb">
+          <div className="flex items-center overflow-x-auto scrollbar-hide snap-x px-2 h-14 bg-white">
               {userRole === 'MANAGER' && (
                   <>
-                    <MobileTabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={18} />} label={t.dashboard} />
-                    <MobileTabButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={18} />} label={t.scanner} />
-                    <MobileTabButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon={<Package size={18} />} label={t.inventory} />
-                    <MobileTabButton active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} icon={<ShoppingCart size={18} />} label={t.orders} count={orders.length} />
+                    <MobileTabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={16} />} label={t.dashboard} />
+                    <MobileTabButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={16} />} label={t.scanner} />
+                    <MobileTabButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon={<Package size={16} />} label={t.inventory} />
+                    <MobileTabButton active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} icon={<ShoppingCart size={16} />} label={t.orders} count={orders.length} />
                   </>
               )}
-              {userRole === 'CASHIER' && <MobileTabButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={18} />} label={t.scanner} />}
-              <MobileTabButton active={activeTab === 'wishlist'} onClick={() => setActiveTab('wishlist')} icon={<Heart size={18} />} label={t.wishlist} count={wishlist.length} />
-              {userRole === 'MANAGER' && <MobileTabButton active={activeTab === 'advisor'} onClick={() => setActiveTab('advisor')} icon={<MessageSquareText size={18} />} label={t.advisor} />}
-              <MobileTabButton active={activeTab === 'suppliers'} onClick={() => setActiveTab('suppliers')} icon={<Truck size={18} />} label={t.suppliers} />
+              {userRole === 'CASHIER' && <MobileTabButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={16} />} label={t.scanner} />}
+              <MobileTabButton active={activeTab === 'wishlist'} onClick={() => setActiveTab('wishlist')} icon={<Heart size={16} />} label={t.wishlist} count={wishlist.length} />
+              {userRole === 'MANAGER' && <MobileTabButton active={activeTab === 'advisor'} onClick={() => setActiveTab('advisor')} icon={<MessageSquareText size={16} />} label={t.advisor} />}
+              <MobileTabButton active={activeTab === 'suppliers'} onClick={() => setActiveTab('suppliers')} icon={<Truck size={16} />} label={t.suppliers} />
           </div>
       </nav>
 
       <style>{`
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-        .no-scrollbar { -webkit-overflow-scrolling: touch; }
       `}</style>
     </div>
   );
@@ -207,14 +206,14 @@ const NavButton: React.FC<{ active: boolean; onClick: () => void; icon: React.Re
 const MobileTabButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string; count?: number }> = ({ active, onClick, icon, label, count }) => (
     <button 
         onClick={onClick} 
-        className={`flex flex-col items-center justify-center h-full min-w-[75px] snap-center transition-all duration-300 relative ${active ? 'text-orange-600 scale-110' : 'text-slate-400'}`}
+        className={`flex flex-col items-center justify-center h-full min-w-[68px] snap-center transition-all duration-200 relative ${active ? 'text-orange-600 scale-105' : 'text-slate-400'}`}
     >
         <div className="relative">
             {icon}
-            {!!count && <span className="absolute -top-1.5 -right-1.5 bg-orange-500 text-white text-[8px] w-4 h-4 flex items-center justify-center rounded-full border-2 border-white font-black">{count}</span>}
+            {!!count && <span className="absolute -top-1.5 -right-1.5 bg-orange-500 text-white text-[7px] w-3.5 h-3.5 flex items-center justify-center rounded-full border border-white font-black">{count}</span>}
         </div>
-        <span className={`text-[9px] font-black mt-1.5 uppercase tracking-tighter transition-all ${active ? 'opacity-100' : 'opacity-60'}`}>{label}</span>
-        {active && <div className="absolute bottom-1 w-6 h-1 bg-orange-600 rounded-full"></div>}
+        <span className={`text-[8px] font-black mt-1 uppercase tracking-tighter transition-all ${active ? 'opacity-100' : 'opacity-60'}`}>{label}</span>
+        {active && <div className="absolute bottom-0.5 w-4 h-0.5 bg-orange-600 rounded-full"></div>}
     </button>
 );
 
