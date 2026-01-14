@@ -114,16 +114,17 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col lg:flex-row">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col lg:flex-row overflow-x-hidden">
+      {/* Desktop Sidebar */}
       <aside className="hidden lg:flex w-64 bg-lime-600 text-white flex-col fixed h-full z-20 shadow-xl">
         <div className="h-20 flex flex-col items-start justify-center px-6 border-b border-lime-500">
           <div className="flex items-center">
              <Store className="text-white w-8 h-8 mr-2" />
              <span className="font-bold text-xl tracking-tight">LaDoiPasi</span>
           </div>
-          <span className="text-xs text-lime-100 mt-1">{userStore} • {userRole === 'MANAGER' ? t.roles.manager : t.roles.cashier}</span>
+          <span className="text-xs text-lime-100 mt-1 uppercase tracking-widest font-bold">{userStore}</span>
         </div>
-        <nav className="flex-1 py-6 px-4 space-y-1">
+        <nav className="flex-1 py-6 px-4 space-y-1 overflow-y-auto">
           {userRole === 'MANAGER' && (
               <>
                 <NavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={20} />} label={t.dashboard} />
@@ -138,60 +139,82 @@ const App: React.FC = () => {
           {userRole === 'MANAGER' && <NavButton active={activeTab === 'advisor'} onClick={() => setActiveTab('advisor')} icon={<MessageSquareText size={20} />} label={t.advisor} />}
         </nav>
         <div className="p-4 border-t border-lime-500 bg-lime-700/30">
-          <button onClick={handleLogout} className="flex items-center space-x-2 text-lime-100 hover:text-white transition-colors w-full"><LogOut size={16} /> <span className="text-sm">Logout</span></button>
+          <button onClick={handleLogout} className="flex items-center space-x-2 text-lime-100 hover:text-white transition-colors w-full px-2 py-2 rounded-lg hover:bg-lime-600/50"><LogOut size={16} /> <span className="text-sm font-medium">Logout</span></button>
         </div>
       </aside>
 
-      <header className="lg:hidden bg-lime-600 text-white p-3 sticky top-0 z-30 shadow-md flex justify-between items-center">
+      {/* Mobile Top Header */}
+      <header className="lg:hidden bg-lime-600 text-white p-3 sticky top-0 z-30 shadow-md flex justify-between items-center h-14">
           <div className="flex items-center space-x-2">
-               <Store className="w-5 h-5" />
-               <span className="font-bold text-base leading-none">LaDoiPasi <span className="font-normal text-[10px] opacity-80">| {userStore}</span></span>
+               <Store className="w-5 h-5 text-orange-400" />
+               <span className="font-black text-sm uppercase tracking-tight">LaDoiPasi <span className="font-normal opacity-70 ml-1">| {userStore}</span></span>
           </div>
           <div className="flex items-center space-x-2">
                <LanguageToggle current={language} onToggle={setLanguage} mobile />
-               <button onClick={handleLogout} className="p-1.5"><LogOut size={18} /></button>
+               <button onClick={handleLogout} className="p-1.5 bg-lime-700/50 rounded-lg"><LogOut size={16} /></button>
           </div>
       </header>
 
-      <main className="flex-1 lg:ml-64 p-3 md:p-6 lg:p-10 pb-20 lg:pb-10">
+      {/* Main Content Area */}
+      <main className="flex-1 lg:ml-64 p-3 md:p-6 lg:p-10 pb-24 lg:pb-10 overflow-x-hidden">
         <header className="hidden lg:flex justify-between items-center mb-8">
-          <div><h1 className="text-2xl font-bold text-slate-800">{t[activeTab]}</h1></div>
+          <div>
+            <h1 className="text-2xl font-black text-slate-800 uppercase tracking-tight">{t[activeTab]}</h1>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">{userStore} • {userRole}</p>
+          </div>
           <LanguageToggle current={language} onToggle={setLanguage} />
         </header>
-        <div className="max-w-7xl mx-auto">{renderContent()}</div>
+        
+        <div className="max-w-7xl mx-auto mb-4">
+          {renderContent()}
+        </div>
       </main>
 
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 flex justify-around items-center px-1 h-16 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] safe-area-pb">
-          {userRole === 'MANAGER' && (
-              <>
-                <MobileNavButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={18} />} label={t.dashboard} />
-                <MobileNavButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={18} />} label={t.scanner} />
-                <MobileNavButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon={<Package size={18} />} label={t.inventory} />
-                <MobileNavButton active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} icon={<ShoppingCart size={18} />} label={t.orders} count={orders.length} />
-              </>
-          )}
-          {userRole === 'CASHIER' && <MobileNavButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={18} />} label={t.scanner} />}
-          <MobileNavButton active={activeTab === 'wishlist'} onClick={() => setActiveTab('wishlist')} icon={<Heart size={18} />} label={t.wishlist} count={wishlist.length} />
-          {userRole === 'MANAGER' && <MobileNavButton active={activeTab === 'advisor'} onClick={() => setActiveTab('advisor')} icon={<MessageSquareText size={18} />} label={t.advisor} />}
+      {/* MOBILE SCROLLABLE NAVIGATION BAR */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 z-50 shadow-[0_-10px_30px_rgba(0,0,0,0.08)] safe-area-pb">
+          <div className="flex items-center overflow-x-auto scrollbar-hide snap-x px-2 h-16 bg-white no-scrollbar">
+              {userRole === 'MANAGER' && (
+                  <>
+                    <MobileTabButton active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<LayoutDashboard size={18} />} label={t.dashboard} />
+                    <MobileTabButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={18} />} label={t.scanner} />
+                    <MobileTabButton active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} icon={<Package size={18} />} label={t.inventory} />
+                    <MobileTabButton active={activeTab === 'orders'} onClick={() => setActiveTab('orders')} icon={<ShoppingCart size={18} />} label={t.orders} count={orders.length} />
+                  </>
+              )}
+              {userRole === 'CASHIER' && <MobileTabButton active={activeTab === 'scanner'} onClick={() => setActiveTab('scanner')} icon={<ScanLine size={18} />} label={t.scanner} />}
+              <MobileTabButton active={activeTab === 'wishlist'} onClick={() => setActiveTab('wishlist')} icon={<Heart size={18} />} label={t.wishlist} count={wishlist.length} />
+              {userRole === 'MANAGER' && <MobileTabButton active={activeTab === 'advisor'} onClick={() => setActiveTab('advisor')} icon={<MessageSquareText size={18} />} label={t.advisor} />}
+              <MobileTabButton active={activeTab === 'suppliers'} onClick={() => setActiveTab('suppliers')} icon={<Truck size={18} />} label={t.suppliers} />
+          </div>
       </nav>
+
+      <style>{`
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .no-scrollbar { -webkit-overflow-scrolling: touch; }
+      `}</style>
     </div>
   );
 };
 
 const NavButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string; count?: number }> = ({ active, onClick, icon, label, count }) => (
-    <button onClick={onClick} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${active ? 'bg-orange-500 text-white shadow-md' : 'text-lime-50 hover:bg-lime-500'}`}>
-    <div className="flex items-center space-x-3">{icon} <span className="font-medium text-sm">{label}</span></div>
-    {!!count && <span className={`flex items-center justify-center w-5 h-5 text-[10px] font-bold rounded-full ${active ? 'bg-white text-orange-600' : 'bg-lime-800'}`}>{count}</span>}
+    <button onClick={onClick} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${active ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30 translate-x-1' : 'text-lime-50 hover:bg-lime-500 hover:translate-x-1'}`}>
+    <div className="flex items-center space-x-3">{icon} <span className="font-bold text-sm tracking-tight">{label}</span></div>
+    {!!count && <span className={`flex items-center justify-center w-5 h-5 text-[10px] font-black rounded-full ${active ? 'bg-white text-orange-600' : 'bg-lime-800 text-lime-100'}`}>{count}</span>}
   </button>
 );
 
-const MobileNavButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string; count?: number }> = ({ active, onClick, icon, label, count }) => (
-    <button onClick={onClick} className={`flex flex-col items-center justify-center h-full min-w-0 flex-1 px-0.5 ${active ? 'text-orange-600' : 'text-slate-400'}`}>
+const MobileTabButton: React.FC<{ active: boolean; onClick: () => void; icon: React.ReactNode; label: string; count?: number }> = ({ active, onClick, icon, label, count }) => (
+    <button 
+        onClick={onClick} 
+        className={`flex flex-col items-center justify-center h-full min-w-[75px] snap-center transition-all duration-300 relative ${active ? 'text-orange-600 scale-110' : 'text-slate-400'}`}
+    >
         <div className="relative">
             {icon}
-            {!!count && <span className="absolute -top-1.5 -right-1.5 bg-orange-500 text-white text-[8px] w-3.5 h-3.5 flex items-center justify-center rounded-full border border-white">{count}</span>}
+            {!!count && <span className="absolute -top-1.5 -right-1.5 bg-orange-500 text-white text-[8px] w-4 h-4 flex items-center justify-center rounded-full border-2 border-white font-black">{count}</span>}
         </div>
-        <span className="text-[8px] md:text-[10px] font-bold mt-1.5 uppercase tracking-tighter truncate w-full px-0.5 text-center">{label}</span>
+        <span className={`text-[9px] font-black mt-1.5 uppercase tracking-tighter transition-all ${active ? 'opacity-100' : 'opacity-60'}`}>{label}</span>
+        {active && <div className="absolute bottom-1 w-6 h-1 bg-orange-600 rounded-full"></div>}
     </button>
 );
 
